@@ -1,6 +1,6 @@
 import { defineRule } from '@oxlint/plugins'
 import { createExtractorVisitors, preserveSpaces, type ClassLocation } from '../utils/extractors'
-import { splitClasses } from '../utils/class-splitter'
+import { rebuildClassString, splitClassesWithSeparators } from '../utils/class-splitter'
 
 export const noDuplicateClasses = defineRule({
   meta: {
@@ -17,7 +17,8 @@ export const noDuplicateClasses = defineRule({
   createOnce(context) {
     function check(locations: ClassLocation[]) {
       for (const loc of locations) {
-        const classes = splitClasses(loc.value)
+        const split = splitClassesWithSeparators(loc.value)
+        const classes = split.classes
         const seen = new Set<string>()
         const duplicates: string[] = []
 
@@ -31,7 +32,7 @@ export const noDuplicateClasses = defineRule({
 
         if (duplicates.length > 0) {
           const unique = [...new Set(classes)]
-          const fixed = unique.join(' ')
+          const fixed = rebuildClassString(split, unique)
 
           for (const dup of duplicates) {
             context.report({

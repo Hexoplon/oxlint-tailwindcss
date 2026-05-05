@@ -1,6 +1,6 @@
 import { defineRule } from '@oxlint/plugins'
 import { createExtractorVisitors, preserveSpaces, type ClassLocation } from '../utils/extractors'
-import { splitClasses } from '../utils/class-splitter'
+import { rebuildClassString, splitClassesWithSeparators } from '../utils/class-splitter'
 
 const VALUE_RE = /^(?:m[trbl]|p[trbl]|[wh]|rounded-t[lr]|rounded-b[lr]|min-[wh]|max-[wh])-(.+)$/
 
@@ -74,7 +74,8 @@ export const enforceShorthand = defineRule({
   createOnce(context) {
     function check(locations: ClassLocation[]) {
       for (const loc of locations) {
-        const classes = splitClasses(loc.value)
+        const split = splitClassesWithSeparators(loc.value)
+        const classes = split.classes
         if (classes.length < 2) continue
 
         const classSet = new Set(classes)
@@ -118,7 +119,10 @@ export const enforceShorthand = defineRule({
                 replacement: `${importantStart}${rule.replacement}${importantEnd}`,
               },
               fix(fixer) {
-                return fixer.replaceTextRange(loc.range, preserveSpaces(loc, remaining.join(' ')))
+                return fixer.replaceTextRange(
+                  loc.range,
+                  preserveSpaces(loc, rebuildClassString(split, remaining)),
+                )
               },
             })
           }

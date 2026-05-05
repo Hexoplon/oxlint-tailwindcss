@@ -16,10 +16,30 @@ export const noUnnecessaryWhitespace = defineRule({
   createOnce(context) {
     function check(locations: ClassLocation[]) {
       for (const loc of locations) {
-        // Collapse all whitespace runs to a single space
-        let normalized = loc.value.replace(/\s+/g, ' ')
+        // Multiline-aware normalization:
+        //  - within each line, collapse runs of horizontal whitespace (spaces
+        //    and tabs) to a single space.
+        //  - preserve newlines and the indentation that immediately follows
+        //    each newline — that's intentional formatting (e.g. produced by
+        //    enforce-consistent-line-wrapping `classesPerLine`).
+        //
+        // Without preserving the post-newline indent, this rule and
+        // `enforce-consistent-line-wrapping` form an unfixable cycle (see #14).
+        const lines = loc.value.split('\n')
+        const normalizedLines = lines.map((line, i) => {
+          if (i === 0) {
+            return line.replace(/[ \t]+/g, ' ')
+          }
+          // For non-first lines, peel off leading horizontal whitespace
+          // (the indent) and normalize only the rest.
+          const m = /^([ \t]*)([\s\S]*)$/.exec(line)
+          if (!m) return line.replace(/[ \t]+/g, ' ')
+          return m[1] + m[2].replace(/[ \t]+/g, ' ')
+        })
+        let normalized = normalizedLines.join('\n')
 
-        // Trim edges, but preserve a single space at template expression boundaries
+        // Trim edges, but preserve a single space at template expression boundaries.
+        // Newlines at edges are preserved verbatim — intentional formatting.
         if (normalized.startsWith(' ') && !loc.preserveLeadingSpace) {
           normalized = normalized.slice(1)
         }

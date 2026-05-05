@@ -1,6 +1,6 @@
 import { defineRule } from '@oxlint/plugins'
 import { createExtractorVisitors, preserveSpaces, type ClassLocation } from '../utils/extractors'
-import { splitClasses } from '../utils/class-splitter'
+import { rebuildClassString, splitClassesWithSeparators } from '../utils/class-splitter'
 import { splitUtilityAndVariant } from '../utils/class-parser'
 import { createLazyLoader } from '../design-system/loader'
 
@@ -59,7 +59,8 @@ export const preferThemeTokens = defineRule({
       const { cache } = ds
 
       for (const loc of locations) {
-        const classes = splitClasses(loc.value)
+        const split = splitClassesWithSeparators(loc.value)
+        const classes = split.classes
         const offending: Array<{ cls: string; replacement: string }> = []
 
         for (const cls of classes) {
@@ -96,7 +97,10 @@ export const preferThemeTokens = defineRule({
         if (offending.length === 0) continue
 
         const replacements = new Map(offending.map(({ cls, replacement }) => [cls, replacement]))
-        const fixedValue = classes.map((cls) => replacements.get(cls) ?? cls).join(' ')
+        const fixedValue = rebuildClassString(
+          split,
+          classes.map((cls) => replacements.get(cls) ?? cls),
+        )
 
         for (let i = 0; i < offending.length; i++) {
           const { cls, replacement } = offending[i]

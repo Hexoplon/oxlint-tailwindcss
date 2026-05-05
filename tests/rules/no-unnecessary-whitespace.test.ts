@@ -16,6 +16,18 @@ ruleTester.run('no-unnecessary-whitespace', noUnnecessaryWhitespace, {
       code: '<div className={`grid transition-all ease-in-out ${cond ? "a" : "b"}`} />',
       filename: 'test.tsx',
     },
+    // Newlines + indentation are intentional formatting (e.g. produced by
+    // enforce-consistent-line-wrapping `classesPerLine`). Must not be
+    // collapsed — see issue #14.
+    {
+      code: 'const className = `bg-red-500 text-white\n                  hover:bg-red-600 focus:ring-2`',
+      filename: 'test.tsx',
+    },
+    // Tabs as indentation
+    {
+      code: 'const className = `flex items-center\n\t\t\tjustify-between`',
+      filename: 'test.tsx',
+    },
   ],
   invalid: [
     {
@@ -48,6 +60,21 @@ ruleTester.run('no-unnecessary-whitespace', noUnnecessaryWhitespace, {
       filename: 'test.tsx',
       errors: [{ messageId: 'unnecessaryWhitespace' }],
       output: '<div className={`${x} flex items-center`} />',
+    },
+    // Multiline with extra horizontal spaces inside one line: collapse those,
+    // leave the newline + indent untouched.
+    {
+      code: 'const className = `flex   items-center\n   bg-red-500    text-white`',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'unnecessaryWhitespace' }],
+      output: 'const className = `flex items-center\n   bg-red-500 text-white`',
+    },
+    // Tab between class names on the same line: still collapsed.
+    {
+      code: 'const className = `flex\titems-center`',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'unnecessaryWhitespace' }],
+      output: 'const className = `flex items-center`',
     },
   ],
 })

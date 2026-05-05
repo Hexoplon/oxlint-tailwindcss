@@ -1,6 +1,6 @@
 import { defineRule } from '@oxlint/plugins'
 import { createExtractorVisitors, preserveSpaces, type ClassLocation } from '../utils/extractors'
-import { splitClasses } from '../utils/class-splitter'
+import { rebuildClassString, splitClassesWithSeparators } from '../utils/class-splitter'
 import { findBestSuggestion } from '../utils/levenshtein'
 import { createLazyLoader } from '../design-system/loader'
 import { safeOptions } from '../types'
@@ -75,7 +75,8 @@ export const noUnknownClasses = defineRule({
       const { cache } = ds
 
       for (const loc of locations) {
-        const classes = splitClasses(loc.value)
+        const split = splitClassesWithSeparators(loc.value)
+        const classes = split.classes
 
         for (const cls of classes) {
           if (shouldIgnore(cls)) continue
@@ -89,7 +90,10 @@ export const noUnknownClasses = defineRule({
           const suggestion = findBestSuggestion(stripped, cache.validClasses)
 
           if (suggestion) {
-            const fixedValue = classes.map((c) => (c === cls ? suggestion : c)).join(' ')
+            const fixedValue = rebuildClassString(
+              split,
+              classes.map((c) => (c === cls ? suggestion : c)),
+            )
             context.report({
               node: loc.node,
               messageId: 'unknownWithSuggestion',

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { splitClasses } from '../../src/utils/class-splitter'
+import {
+  rebuildClassString,
+  splitClasses,
+  splitClassesWithSeparators,
+} from '../../src/utils/class-splitter'
 
 describe('splitClasses', () => {
   it('splits simple classes', () => {
@@ -96,5 +100,79 @@ describe('splitClasses', () => {
       'peer/input',
       'flex',
     ])
+  })
+})
+
+describe('splitClassesWithSeparators', () => {
+  it('captures single-space separators', () => {
+    const split = splitClassesWithSeparators('flex items-center')
+    expect(split.classes).toEqual(['flex', 'items-center'])
+    expect(split.separators).toEqual(['', ' ', ''])
+  })
+
+  it('captures leading and trailing whitespace', () => {
+    const split = splitClassesWithSeparators('  flex items-center  ')
+    expect(split.classes).toEqual(['flex', 'items-center'])
+    expect(split.separators).toEqual(['  ', ' ', '  '])
+  })
+
+  it('captures multiline separators verbatim', () => {
+    const split = splitClassesWithSeparators('flex\n   items-center\n   bg-red-500')
+    expect(split.classes).toEqual(['flex', 'items-center', 'bg-red-500'])
+    expect(split.separators).toEqual(['', '\n   ', '\n   ', ''])
+  })
+
+  it('handles bracket-aware splitting', () => {
+    const split = splitClassesWithSeparators('bg-[url("a b c")] text-white')
+    expect(split.classes).toEqual(['bg-[url("a b c")]', 'text-white'])
+    expect(split.separators).toEqual(['', ' ', ''])
+  })
+
+  it('returns empty separators slot for empty input', () => {
+    const split = splitClassesWithSeparators('')
+    expect(split.classes).toEqual([])
+    expect(split.separators).toEqual([''])
+  })
+
+  it('separators length is always classes.length + 1', () => {
+    for (const input of ['flex', 'flex foo', 'a b c', '', '  ', 'a\nb\n c']) {
+      const split = splitClassesWithSeparators(input)
+      expect(split.separators).toHaveLength(split.classes.length + 1)
+    }
+  })
+})
+
+describe('rebuildClassString', () => {
+  it('1-to-1 preserves single-space separators', () => {
+    const split = splitClassesWithSeparators('flex items-center')
+    expect(rebuildClassString(split, ['block', 'gap-4'])).toBe('block gap-4')
+  })
+
+  it('1-to-1 preserves multiline indent', () => {
+    const split = splitClassesWithSeparators('text-white bg-red-500\n   focus:ring-2')
+    expect(rebuildClassString(split, ['bg-red-500', 'text-white', 'focus:ring-2'])).toBe(
+      'bg-red-500 text-white\n   focus:ring-2',
+    )
+  })
+
+  it('1-to-1 preserves leading and trailing whitespace', () => {
+    const split = splitClassesWithSeparators(' flex bar ')
+    expect(rebuildClassString(split, ['a', 'b'])).toBe(' a b ')
+  })
+
+  it('shorter array degrades to single space when input was single-line', () => {
+    const split = splitClassesWithSeparators('a b c')
+    expect(rebuildClassString(split, ['a', 'c'])).toBe('a c')
+  })
+
+  it('shorter array degrades to multiline join when input had newlines', () => {
+    const split = splitClassesWithSeparators('a b\n   c')
+    // 3→2: degradation picks the first newline-bearing internal separator
+    expect(rebuildClassString(split, ['a', 'c'])).toBe('a\n   c')
+  })
+
+  it('longer array pads with single space', () => {
+    const split = splitClassesWithSeparators('a b')
+    expect(rebuildClassString(split, ['a', 'b', 'c'])).toBe('a b c')
   })
 })

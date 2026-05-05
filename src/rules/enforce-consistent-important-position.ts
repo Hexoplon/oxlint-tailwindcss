@@ -1,6 +1,6 @@
 import { defineRule } from '@oxlint/plugins'
 import { createExtractorVisitors, preserveSpaces, type ClassLocation } from '../utils/extractors'
-import { splitClasses } from '../utils/class-splitter'
+import { rebuildClassString, splitClassesWithSeparators } from '../utils/class-splitter'
 import { splitUtilityAndVariant } from '../utils/class-parser'
 import { safeOptions } from '../types'
 
@@ -57,7 +57,8 @@ export const enforceConsistentImportantPosition = defineRule({
     function check(locations: ClassLocation[]) {
       const position = getPosition()
       for (const loc of locations) {
-        const classes = splitClasses(loc.value)
+        const split = splitClassesWithSeparators(loc.value)
+        const classes = split.classes
         const offending: Array<{ cls: string; replacement: string }> = []
 
         for (const cls of classes) {
@@ -69,7 +70,10 @@ export const enforceConsistentImportantPosition = defineRule({
         if (offending.length === 0) continue
 
         const replacements = new Map(offending.map(({ cls, replacement }) => [cls, replacement]))
-        const fixedValue = classes.map((cls) => replacements.get(cls) ?? cls).join(' ')
+        const fixedValue = rebuildClassString(
+          split,
+          classes.map((cls) => replacements.get(cls) ?? cls),
+        )
 
         // Report each offending class; attach the fix to the first one
         for (let i = 0; i < offending.length; i++) {

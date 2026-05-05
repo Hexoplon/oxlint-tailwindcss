@@ -1,6 +1,6 @@
 import { defineRule } from '@oxlint/plugins'
 import { createExtractorVisitors, preserveSpaces, type ClassLocation } from '../utils/extractors'
-import { splitClasses } from '../utils/class-splitter'
+import { rebuildClassString, splitClassesWithSeparators } from '../utils/class-splitter'
 import { utilityHasDynamicValue } from '../utils/class-parser'
 import { createLazyLoader, rootFontSizeFromSettings } from '../design-system/loader'
 import { canonicalizeClassesSync } from '../design-system/canonicalize-service'
@@ -71,7 +71,8 @@ export const enforceCanonical = defineRule({
       const { cache, entryPoint } = ds
 
       for (const loc of locations) {
-        const classes = splitClasses(loc.value)
+        const split = splitClassesWithSeparators(loc.value)
+        const classes = split.classes
 
         // Split the location into two buckets:
         //   - named classes → precomputed `canonicalMap` is ground truth,
@@ -120,7 +121,7 @@ export const enforceCanonical = defineRule({
 
           if (firstNonCanonical) {
             firstNonCanonical = false
-            const fixedValue = canonicals.join(' ')
+            const fixedValue = rebuildClassString(split, canonicals)
             context.report({
               node: loc.node,
               messageId: 'nonCanonical',
@@ -130,7 +131,7 @@ export const enforceCanonical = defineRule({
               },
             })
           } else {
-            const fixedValue = canonicals.join(' ')
+            const fixedValue = rebuildClassString(split, canonicals)
             context.report({
               node: loc.node,
               messageId: 'nonCanonical',

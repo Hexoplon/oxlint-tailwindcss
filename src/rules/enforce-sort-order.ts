@@ -1,6 +1,6 @@
 import { defineRule } from '@oxlint/plugins'
 import { createExtractorVisitors, preserveSpaces, type ClassLocation } from '../utils/extractors'
-import { splitClasses } from '../utils/class-splitter'
+import { rebuildClassString, splitClassesWithSeparators } from '../utils/class-splitter'
 import { splitUtilityAndVariant } from '../utils/class-parser'
 import { createLazyLoader } from '../design-system/loader'
 import { sortClassesSync } from '../design-system/sort-service'
@@ -119,7 +119,8 @@ export const enforceSortOrder = defineRule({
         return result
       }
       for (const loc of locations) {
-        const classes = splitClasses(loc.value)
+        const split = splitClassesWithSeparators(loc.value)
+        const classes = split.classes
         if (classes.length < 2) continue
 
         const sortedNames = mode === 'strict' ? sortStrict(classes) : sortDefault(classes)
@@ -131,7 +132,10 @@ export const enforceSortOrder = defineRule({
           node: loc.node,
           messageId: 'unsorted',
           fix(fixer) {
-            return fixer.replaceTextRange(loc.range, preserveSpaces(loc, sortedNames.join(' ')))
+            return fixer.replaceTextRange(
+              loc.range,
+              preserveSpaces(loc, rebuildClassString(split, sortedNames)),
+            )
           },
         })
       }
