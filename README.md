@@ -1,6 +1,6 @@
 # oxlint-tailwindcss
 
-22 Tailwind CSS linting rules for [oxlint](https://oxc.rs/docs/guide/usage/linter). Built for Tailwind CSS v4 with auto-detection, typo suggestions, and autofixes.
+23 Tailwind CSS linting rules for [oxlint](https://oxc.rs/docs/guide/usage/linter). Built for Tailwind CSS v4 with auto-detection, typo suggestions, and autofixes.
 
 Read the story behind this plugin: [oxlint-tailwindcss: The Linting Plugin Tailwind v4 Needed](https://sergioazocar.com/en/blog/oxlint-tailwindcss-the-linting-plugin-tailwind-v4-needed)
 
@@ -13,7 +13,7 @@ Read the story behind this plugin: [oxlint-tailwindcss: The Linting Plugin Tailw
 - **Typo suggestions** — `itms-center` → "Did you mean `items-center`?"
 - **Conflict detection** — Shows exactly which CSS properties conflict and which class wins.
 - **Lightweight** — Only 2 runtime dependencies: `@tailwindcss/node` and `tailwindcss`.
-- **22 rules** — Correctness, style, complexity, and restriction rules with autofixes where possible.
+- **23 rules** — Correctness, style, complexity, and restriction rules with autofixes where possible.
 - **Variable detection** — Lints variables named `className`, `classes`, `style` automatically.
 - **Customizable** — Extend class detection with custom attributes, callees, tags, and variable patterns.
 - **Component class support** — Recognizes `@layer components { .btn {} }` in your CSS.
@@ -58,6 +58,7 @@ Add the plugin to your `.oxlintrc.json`:
     "tailwindcss/no-arbitrary-value": "off",
     "tailwindcss/no-hardcoded-colors": "warn",
     "tailwindcss/no-unnecessary-arbitrary-value": "warn",
+    "tailwindcss/prefer-theme-tokens": "off",
   },
 }
 ```
@@ -187,7 +188,7 @@ Output:
 [oxlint-tailwindcss] packages/admin/src/Dashboard.tsx → packages/admin/src/styles.css
 ```
 
-If no entry point is found (neither configured nor auto-detected), rules that require the design system (`no-unknown-classes`, `no-conflicting-classes`, `no-deprecated-classes`, `enforce-canonical`, `enforce-sort-order`, `no-unnecessary-arbitrary-value`, `consistent-variant-order`) are silently disabled. All other rules work without it.
+If no entry point is found (neither configured nor auto-detected), rules that require the design system (`no-unknown-classes`, `no-conflicting-classes`, `no-deprecated-classes`, `enforce-canonical`, `enforce-sort-order`, `no-unnecessary-arbitrary-value`, `prefer-theme-tokens`, `consistent-variant-order`) are silently disabled. All other rules work without it.
 
 ## Custom class detection
 
@@ -217,7 +218,7 @@ You can extend these defaults via `settings.tailwindcss`. All values are **addit
 }
 ```
 
-This applies to all 22 rules at once. For example, adding `"classNames"` to `attributes` makes every rule lint `<Input classNames={{ root: "..." }} />`.
+This applies to all 23 rules at once. For example, adding `"classNames"` to `attributes` makes every rule lint `<Input classNames={{ root: "..." }} />`.
 
 To **remove** specific items from the built-in defaults, use `exclude`:
 
@@ -804,6 +805,23 @@ Detects arbitrary values that have a named Tailwind equivalent. The arbitrary fo
 // ✅ OK — no named equivalent
 "w-[200px]"
 "bg-[#custom]"
+```
+
+**Requires design system.** **Autofix:** Replaces with named class.
+
+---
+
+#### `prefer-theme-tokens`
+
+Suggests replacing raw CSS variable references like `border-(--border)` or `bg-[var(--primary)]` with the equivalent named theme-token utility (`border-border`, `bg-primary`) when one exists in your design system.
+
+Unlike `no-unnecessary-arbitrary-value`, this rule fires even when the named utility produces _different_ CSS — for example, in shadcn-style themes where `--color-border: hsl(var(--border))` wraps the raw variable. Useful to match the official Tailwind VS Code extension's `suggestCanonicalClasses` behavior. **Off by default** because the replacement may change observable CSS in those setups.
+
+```tsx
+// ❌ Bad → ✅ Fixed (when border-border is a valid utility)
+"border-(--border)"        → "border-border"
+"bg-[var(--primary)]"      → "bg-primary"
+"hover:bg-(--primary)/80"  → "hover:bg-primary/80"
 ```
 
 **Requires design system.** **Autofix:** Replaces with named class.

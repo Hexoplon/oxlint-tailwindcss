@@ -32,7 +32,11 @@ export interface PrecomputedData {
 }
 
 const PRECOMPUTE_SCRIPT = `
-const { __unstable__loadDesignSystem } = require('@tailwindcss/node');
+// Resolve @tailwindcss/node via an absolute path passed in by the parent
+// process — bare-specifier lookup from this child's cwd fails under pnpm
+// strict workspaces (the module lives under node_modules/.pnpm/... which
+// is not on the resolution path from the consumer's project root).
+const { __unstable__loadDesignSystem } = require(process.env.TAILWIND_NODE_PATH);
 const { readFileSync } = require('fs');
 const { dirname, resolve } = require('path');
 
@@ -435,12 +439,22 @@ export function loadDesignSystemSync(cssPath: string, timeout?: number): Precomp
       return cached
     }
 
+    // Resolve @tailwindcss/node from the plugin's own location and pass it to
+    // the child via env. Bare-specifier resolution from the child's cwd would
+    // fail under pnpm strict workspaces where the consumer's project root has
+    // no direct access to the plugin's transitive deps.
+    const tailwindNodePath = require.resolve('@tailwindcss/node')
+
     // Full computation: spawn child process
     const stdout = execFileSync(process.execPath, ['-e', PRECOMPUTE_SCRIPT], {
       encoding: 'utf-8',
       timeout: timeout ?? 30_000,
       maxBuffer: 50 * 1024 * 1024,
-      env: { ...process.env, TAILWIND_CSS_PATH: resolvedPath },
+      env: {
+        ...process.env,
+        TAILWIND_CSS_PATH: resolvedPath,
+        TAILWIND_NODE_PATH: tailwindNodePath,
+      },
       cwd: dirname(resolvedPath),
     })
 
@@ -449,10 +463,22 @@ export function loadDesignSystemSync(cssPath: string, timeout?: number): Precomp
 
     return JSON.parse(stdout) as PrecomputedData
   } catch (error) {
-    console.error(
-      `[oxlint-tailwindcss] Failed to load design system from "${resolvedPath}":`,
-      error instanceof Error ? error.message : error,
-    )
+    const msg = error instanceof Error ? error.message : String(error)
+    // Surface the pnpm/npm hoisting failure mode with an actionable hint
+    // instead of a raw "Cannot find module '@tailwindcss/node'" stack.
+    if (msg.includes("Cannot find module '@tailwindcss/node'")) {
+      console.error(
+        `[oxlint-tailwindcss] Could not resolve '@tailwindcss/node' for "${resolvedPath}". ` +
+          `If you are using pnpm with strict hoisting, add '@tailwindcss/node' as a direct devDependency, ` +
+          `or upgrade oxlint-tailwindcss to >= 0.7.0 which resolves it from the plugin's own install location. ` +
+          `DS-dependent rules will be skipped for this file.`,
+      )
+    } else {
+      console.error(
+        `[oxlint-tailwindcss] Failed to load design system from "${resolvedPath}":`,
+        msg,
+      )
+    }
     return null
   }
 }
