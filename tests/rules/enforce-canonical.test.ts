@@ -142,5 +142,123 @@ ruleTester.run('enforce-canonical', enforceCanonical, {
       ],
       output: '<div className="m-0 mt-0 flex" />',
     },
+    // Issue #16: legacy named classes (not in getClassList()) must canonicalize
+    {
+      code: '<div className="break-words" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="wrap-break-word" />',
+    },
+    {
+      code: '<div className="absolute whitespace-pre-wrap break-words overflow-hidden" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="absolute whitespace-pre-wrap wrap-break-word overflow-hidden" />',
+    },
+    {
+      code: '<div className="order-none" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="order-0" />',
+    },
+    {
+      code: '<div className="overflow-ellipsis" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="text-ellipsis" />',
+    },
+    // Legacy class with variant prefix
+    {
+      code: '<div className="hover:break-words" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="hover:wrap-break-word" />',
+    },
+    // Legacy class with important modifier
+    {
+      code: '<div className="!break-words" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="!wrap-break-word" />',
+    },
+    {
+      code: '<div className="break-words!" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="wrap-break-word!" />',
+    },
+    // start-*/end-* (logical inset) → inset-s-*/inset-e-*
+    {
+      code: '<div className="start-2" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="inset-s-2" />',
+    },
+    {
+      code: '<div className="end-4" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="inset-e-4" />',
+    },
+    {
+      code: '<div className="-start-2" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="-inset-s-2" />',
+    },
+    {
+      code: '<div className="start-1/2" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="inset-s-1/2" />',
+    },
+    // flex-grow / flex-shrink: bare and -1 alias to default (grow / shrink)
+    {
+      code: '<div className="flex-grow" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="grow" />',
+    },
+    {
+      code: '<div className="flex-grow-1" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="grow" />',
+    },
+    {
+      code: '<div className="flex-shrink-0" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="shrink-0" />',
+    },
+    // decoration-clone / decoration-slice
+    {
+      code: '<div className="decoration-clone" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="box-decoration-clone" />',
+    },
+    // bg-gradient-to-* → bg-linear-to-*
+    {
+      code: '<div className="bg-gradient-to-r" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="bg-linear-to-r" />',
+    },
+    // Arbitrary forms route through the worker (canonicalize-service)
+    {
+      code: '<div className="start-[10px]" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      // 10px = 0.625rem, which is spacing token 2.5 — the worker canonicalizes
+      // both the legacy prefix AND the arbitrary value in one pass.
+      output: '<div className="inset-s-2.5" />',
+    },
+    {
+      code: '<div className="flex-grow-[2]" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="grow-2" />',
+    },
   ],
 })

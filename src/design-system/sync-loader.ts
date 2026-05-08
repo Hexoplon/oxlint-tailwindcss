@@ -184,6 +184,47 @@ async function main() {
     }
   }
 
+  // Legacy v3 classes that produce valid CSS in v4 but are not enumerated by
+  // getClassList(). Tailwind's canonicalizeCandidates() still rewrites them to
+  // their v4 equivalent, so we feed them in explicitly. Without this pass,
+  // classes like \`break-words\` would be invisible to enforce-canonical
+  // (issue #16).
+  // - Fixed renames mirror the internal v3->v4 map in tailwindcss/canonicalize.
+  // - Pattern renames (start-* -> inset-s-*, end-* -> inset-e-*) are derived
+  //   from the inset-{s,e}-* utilities present in validClasses so we cover
+  //   every numeric/named value the design system exposes.
+  const legacyCandidates = [
+    'order-none',
+    'break-words',
+    'overflow-ellipsis',
+    'flex-grow', 'flex-grow-0', 'flex-grow-1',
+    'flex-shrink', 'flex-shrink-0', 'flex-shrink-1',
+    'decoration-clone', 'decoration-slice',
+    'bg-gradient-to-t', 'bg-gradient-to-tr', 'bg-gradient-to-r', 'bg-gradient-to-br',
+    'bg-gradient-to-b', 'bg-gradient-to-bl', 'bg-gradient-to-l', 'bg-gradient-to-tl',
+  ];
+  for (const cls of validClasses) {
+    if (cls.startsWith('inset-s-')) legacyCandidates.push('start-' + cls.slice(8));
+    else if (cls.startsWith('-inset-s-')) legacyCandidates.push('-start-' + cls.slice(9));
+    else if (cls.startsWith('inset-e-')) legacyCandidates.push('end-' + cls.slice(8));
+    else if (cls.startsWith('-inset-e-')) legacyCandidates.push('-end-' + cls.slice(9));
+  }
+  const legacyToProcess = legacyCandidates.filter(cls => !validSet.has(cls));
+  if (legacyToProcess.length > 0) {
+    const legacyCssResults = ds.candidatesToCss(legacyToProcess);
+    for (let i = 0; i < legacyToProcess.length; i++) {
+      if (legacyCssResults[i] == null) continue;
+      const cls = legacyToProcess[i];
+      const result = ds.canonicalizeCandidates([cls]);
+      if (result[0] && result[0] !== cls) {
+        canonical[cls] = result[0];
+      }
+      // Mark as valid so no-unknown-classes doesn't flag legacy spellings.
+      validClasses.push(cls);
+      validSet.add(cls);
+    }
+  }
+
   // Sort order — include extra candidates so bare utilities (rounded, blur, etc.) get order
   const allForOrder = [...classNames];
   for (const cls of validClasses) {
@@ -354,7 +395,7 @@ main().catch(e => { process.stderr.write(e.message); process.exit(1); });
 const CACHE_DIR = join(tmpdir(), 'oxlint-tailwindcss')
 
 // Bump this when precompute logic changes to invalidate disk cache
-const CACHE_VERSION = 11
+const CACHE_VERSION = 13
 
 /**
  * Two-level disk cache for monorepo deduplication:
