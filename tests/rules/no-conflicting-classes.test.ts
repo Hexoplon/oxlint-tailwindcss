@@ -9,6 +9,7 @@ import { DesignSystemCache } from '../../src/design-system/cache'
 const ENTRY_POINT = resolve(__dirname, '../fixtures/default.css')
 const PROSE_ENTRY = resolve(__dirname, '../fixtures/with-typography.css')
 const LETTER_SPACING_ENTRY = resolve(__dirname, '../fixtures/with-letter-spacing.css')
+const ANIMATE_ENTRY = resolve(__dirname, '../fixtures/with-tailwindcss-animate.css')
 
 // --- Default design system tests ---
 
@@ -178,5 +179,54 @@ describe('text + tracking composition with letter-spacing', () => {
       { code: '<div className="text-base tracking-normal" />', filename: 'test.tsx' },
     ],
     invalid: [],
+  })
+})
+
+// --- tailwindcss-animate utilities compose through CSS custom properties ---
+
+describe('tailwindcss-animate composition', () => {
+  beforeAll(() => {
+    resetDesignSystem()
+    getLoadedDesignSystem(ANIMATE_ENTRY)
+  })
+
+  const animateTester = new RuleTester()
+
+  animateTester.run('no-conflicting-classes (tailwindcss-animate)', noConflictingClasses, {
+    valid: [
+      {
+        code: '<div className="animate-in fade-in zoom-in slide-in-from-top" />',
+        filename: 'test.tsx',
+      },
+      {
+        code: '<div className="animate-in fade-in-50 zoom-in-95 slide-in-from-bottom-48" />',
+        filename: 'test.tsx',
+      },
+      { code: '<div className="animate-out slide-out-to-top" />', filename: 'test.tsx' },
+      {
+        code: '<div className="animate-out fade-out zoom-out slide-out-to-right-96" />',
+        filename: 'test.tsx',
+      },
+      {
+        code: '<div className="animate-bounce duration-300 delay-150 ease-in-out" />',
+        filename: 'test.tsx',
+      },
+      {
+        code: '<div className="animate-bounce direction-reverse fill-mode-both repeat-infinite running" />',
+        filename: 'test.tsx',
+      },
+    ],
+    invalid: [
+      {
+        code: '<div className="fade-in fade-in-50" />',
+        filename: 'test.tsx',
+        errors: [{ messageId: 'conflict' }],
+      },
+      {
+        code: '<div className="running paused" />',
+        filename: 'test.tsx',
+        errors: [{ messageId: 'conflict' }],
+      },
+    ],
   })
 })
