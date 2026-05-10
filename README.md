@@ -843,7 +843,7 @@ The class parser correctly handles:
 ## Known limitations
 
 - **`enforce-canonical`**: Named classes are canonicalized via the precomputed map (covers everything in `getClassList()` plus a curated list of legacy v3 spellings like `break-words`, `flex-grow`, `start-N`, `bg-gradient-to-*`). Arbitrary/CSS-var forms (`p-[2px]`, `bg-(--c)`) are canonicalized dynamically via the worker. Some valid v4 classes that don't appear in `getClassList()` and have no canonical rewrite (e.g. `border-1` is valid as a dynamic numeric value but isn't enumerated) are left untouched.
-- **`no-conflicting-classes`**: Uses exact CSS property name matching. Shorthand vs longhand conflicts (e.g., `p-4` vs `px-2` where `padding` conflicts with `padding-left`) are not detected.
+- **`no-conflicting-classes`**: Uses exact CSS property name matching plus composition heuristics: CSS-var composition (`shadow` + `ring`), narrowing-override (later class is a strict subset of earlier — handles `size-4 h-6`, `rounded-t-lg rounded-tl-sm`, `truncate text-clip`), complementary groups, and composition pairs. Shorthand vs longhand cases where Tailwind emits the shorthand and Tailwind's longhand has a different CSS property name (e.g., `p-4` vs `px-2`: `padding` vs `padding-left`/`padding-right`) are still not detected.
 - **`no-dark-without-light`**: Groups by utility prefix heuristic. May not perfectly match all multi-part utility prefixes.
 - **`no-unnecessary-arbitrary-value`**: Only detects equivalences for classes with a single CSS property. Multi-property utilities may have arbitrary forms that aren't detected.
 - **Component classes**: Only first-level `@import` relative paths are followed. Deeply nested imports or absolute paths are not resolved.

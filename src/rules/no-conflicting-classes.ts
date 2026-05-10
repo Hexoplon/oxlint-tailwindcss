@@ -91,6 +91,17 @@ export const noConflictingClasses = defineRule({
             return !customA.some((p) => customB.includes(p))
           }
 
+          // Detect a narrowing override: the later class's CSS properties are a
+          // strict subset of the earlier class's, so the later class refines one
+          // of the shorthand's properties (size-4 h-6, rounded-t-lg rounded-tl-sm,
+          // truncate text-clip). Direction-sensitive: the inverse means the wider
+          // later class clobbers a prior narrower override.
+          function isNarrowingOverride(propsEarlier: string[], propsLater: string[]): boolean {
+            if (propsLater.length === 0 || propsLater.length >= propsEarlier.length) return false
+            const setEarlier = new Set(propsEarlier)
+            return propsLater.every((p) => setEarlier.has(p))
+          }
+
           function shouldSkipPair(
             a: string,
             b: string,
@@ -99,6 +110,8 @@ export const noConflictingClasses = defineRule({
           ): boolean {
             // CSS custom property composition (handles shadow/ring, filter, contain, etc.)
             if (isCompositionViaCssVars(propsA, propsB)) return true
+            // Narrowing override (shorthand → longhand on one of its props)
+            if (isNarrowingOverride(propsA, propsB)) return true
 
             let ua = extractUtility(a)
             let ub = extractUtility(b)
