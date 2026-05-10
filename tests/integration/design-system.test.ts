@@ -8,6 +8,7 @@ import {
 import { DesignSystemCache } from '../../src/design-system/cache'
 
 const FIXTURE_PATH = resolve(__dirname, '../fixtures/default.css')
+const ANIMATE_FIXTURE_PATH = resolve(__dirname, '../fixtures/with-tailwindcss-animate.css')
 
 describe('Design System Integration', () => {
   let result: LoadResult | null
@@ -136,6 +137,46 @@ describe('Design System Integration', () => {
     // All should have non-null order
     for (const [, order] of ordered) {
       expect(order).not.toBeNull()
+    }
+  })
+})
+
+describe('tailwindcss-animate integration', () => {
+  it('validates documented animation utility classes', () => {
+    resetDesignSystem()
+    const animateResult = getLoadedDesignSystem(ANIMATE_FIXTURE_PATH)
+    expect(animateResult).not.toBeNull()
+
+    const { cache } = animateResult!
+    const documentedClasses = [
+      'animate-in',
+      'animate-out',
+      'fade-in',
+      'fade-in-50',
+      'fade-out',
+      'fade-out-75',
+      'spin-in-90',
+      'spin-out-90',
+      'zoom-in',
+      'zoom-in-95',
+      'zoom-out',
+      'zoom-out-95',
+      'slide-in-from-top',
+      'slide-in-from-bottom-48',
+      'slide-out-to-left-72',
+      'slide-out-to-right-96',
+      'direction-alternate-reverse',
+      'fill-mode-both',
+      'repeat-infinite',
+      'fill-mode-[forwards,backwards]',
+      'running',
+      'paused',
+      'ease-in-out',
+      'motion-safe:animate-in',
+    ]
+
+    for (const className of documentedClasses) {
+      expect(cache.isValid(className), className).toBe(true)
     }
   })
 })

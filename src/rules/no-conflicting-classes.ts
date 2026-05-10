@@ -75,6 +75,8 @@ export const noConflictingClasses = defineRule({
             [/^border(?:-[0-9]|$)/, /^border-(?:solid|dashed|dotted|double|hidden|none)$/], // border width + style
             [/^divide-/, /^border(?:-[trblxyse])?-/], // divide-* targets children
             [/^prose(?:-|$)/, /^max-w-/], // prose sets max-width, max-w-* overrides
+            [/^animate-in$/, /^(?:fade|spin|zoom)-in(?:-|$)|^slide-in-from-/], // tailwindcss-animate enter defaults + modifiers
+            [/^animate-out$/, /^(?:fade|spin|zoom)-out(?:-|$)|^slide-out-to-/], // tailwindcss-animate exit defaults + modifiers
           ]
 
           // Detect composition via CSS custom properties: if both classes use
