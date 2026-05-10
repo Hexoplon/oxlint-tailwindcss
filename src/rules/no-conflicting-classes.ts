@@ -53,6 +53,22 @@ export function isCompositionViaCssVars(
 }
 
 /**
+ * Detect a narrowing override: the later class's CSS properties are a strict
+ * subset of the earlier class's, so the later class refines one of the
+ * shorthand's properties (size-4 h-6, rounded-t-lg rounded-tl-sm, truncate
+ * text-clip). Direction-sensitive: the inverse means the wider later class
+ * clobbers a prior narrower override.
+ */
+export function isNarrowingOverride(
+  propsEarlier: readonly string[],
+  propsLater: readonly string[],
+): boolean {
+  if (propsLater.length === 0 || propsLater.length >= propsEarlier.length) return false
+  const setEarlier = new Set(propsEarlier)
+  return propsLater.every((p) => setEarlier.has(p))
+}
+
+/**
  * Returns true if two classes (within the same variant) should NOT be reported
  * as conflicting despite sharing CSS properties. Pure: regex tables are passed
  * in (or default to the module-level constants).
@@ -68,6 +84,8 @@ export function shouldSkipPair(
   } = {},
 ): boolean {
   if (isCompositionViaCssVars(propsA, propsB)) return true
+  // Narrowing override (shorthand → longhand on one of its props)
+  if (isNarrowingOverride(propsA, propsB)) return true
 
   const ua = stripImportant(extractUtility(a))
   const ub = stripImportant(extractUtility(b))
