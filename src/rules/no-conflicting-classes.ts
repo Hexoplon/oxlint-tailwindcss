@@ -8,10 +8,14 @@ import { createLazyLoader } from '../design-system/loader'
 // Most composition is detected automatically via CSS custom properties
 // (see isCompositionViaCssVars). These groups cover cases where the
 // heuristic fails: shared intermediate vars or missing custom props.
+// A capture group marks the utility prefix: same-prefix pairs (e.g.
+// duration-300 / duration-500) fall through to the overlap check so they
+// still conflict, only cross-prefix pairs compose. No capture group means
+// "always compose within group" (e.g. prose).
 export const COMPLEMENTARY_GROUPS: readonly RegExp[] = [
-  /^(?:from|via|to)-/, // gradient stops (share --tw-gradient-stops)
-  /^(?:transition|duration|ease|delay)(?:-|$)/, // transition composition (transition-all has no custom vars)
-  /^-?(?:translate|scale|rotate|skew)-/, // transform axis composition (overlap not in cssProps)
+  /^(from|via|to)-/, // gradient stops (share --tw-gradient-stops)
+  /^(transition|duration|ease|delay)(?:-|$)/, // transition composition (transition-all has no custom vars)
+  /^-?(translate|scale|rotate|skew)-/, // transform axis composition (overlap not in cssProps)
   /^prose(?:-|$)/, // prose + prose-sm/lg/xl modifiers
 ]
 
@@ -70,7 +74,13 @@ export function shouldSkipPair(
 
   const groups = rules.complementaryGroups ?? COMPLEMENTARY_GROUPS
   for (const re of groups) {
-    if (re.test(ua) && re.test(ub)) return true
+    const ma = ua.match(re)
+    const mb = ub.match(re)
+    if (!ma || !mb) continue
+    // No capture group: always compose within group (e.g. prose)
+    if (ma[1] === undefined) return true
+    // Different prefix: compose; same prefix: fall through to overlap check
+    if (ma[1] !== mb[1]) return true
   }
 
   const pairs = rules.compositionPairs ?? COMPOSITION_PAIRS
