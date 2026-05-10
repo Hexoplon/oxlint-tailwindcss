@@ -91,6 +91,25 @@ ruleTester.run('no-conflicting-classes', noConflictingClasses, {
     { code: '<div className="rounded-lg rounded-tl-sm" />', filename: 'test.tsx' },
     // truncate sets {overflow,text-overflow,white-space}; text-clip refines text-overflow
     { code: '<div className="truncate text-clip" />', filename: 'test.tsx' },
+    // Mask gradient utilities are designed to compose across stops, families, axes, and edges.
+    // Source: https://tailwindcss.com/docs/mask-image
+    { code: '<div className="mask-l-from-50% mask-l-to-90%" />', filename: 'test.tsx' },
+    {
+      code: '<div className="mask-linear-50 mask-linear-from-60% mask-linear-to-80%" />',
+      filename: 'test.tsx',
+    },
+    {
+      code: '<div className="-mask-linear-50 mask-linear-from-60% mask-linear-to-80%" />',
+      filename: 'test.tsx',
+    },
+    { code: '<div className="mask-b-from-50% mask-radial-from-80%" />', filename: 'test.tsx' },
+    {
+      code: '<div className="mask-r-from-80% mask-b-from-80% mask-radial-from-70% mask-radial-to-85%" />',
+      filename: 'test.tsx',
+    },
+    { code: '<div className="mask-x-from-50% mask-x-to-90%" />', filename: 'test.tsx' },
+    { code: '<div className="mask-radial-from-75% mask-radial-at-left" />', filename: 'test.tsx' },
+    { code: '<div className="mask-add mask-linear-from-20%" />', filename: 'test.tsx' },
   ],
   invalid: [
     {
@@ -128,6 +147,23 @@ ruleTester.run('no-conflicting-classes', noConflictingClasses, {
       filename: 'test.tsx',
       errors: [{ messageId: 'conflict' }],
     },
+    // Same mask slot (family + role) with different values still conflicts.
+    {
+      code: '<div className="mask-linear-from-50% mask-linear-from-80%" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="mask-l-from-50% mask-l-from-80%" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    // Two mask composite modes conflict on mask-composite.
+    {
+      code: '<div className="mask-add mask-subtract" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
     {
       code: '<div className="blur-sm blur-lg" />',
       filename: 'test.tsx',
@@ -160,7 +196,8 @@ ruleTester.run('no-conflicting-classes', noConflictingClasses, {
       errors: [{ messageId: 'conflict' }],
     },
     {
-      code: '<div className="rounded-tl-sm rounded-t-lg" />',      filename: 'test.tsx',
+      code: '<div className="rounded-tl-sm rounded-t-lg" />',
+      filename: 'test.tsx',
       errors: [{ messageId: 'conflict' }],
     },
   ],
