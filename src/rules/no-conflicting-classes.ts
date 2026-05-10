@@ -62,10 +62,14 @@ export const noConflictingClasses = defineRule({
           // Most composition is detected automatically via CSS custom properties
           // (see isCompositionViaCssVars below). These groups cover cases where
           // the heuristic fails: shared intermediate vars or missing custom props.
+          // A capture group marks the utility prefix: same-prefix pairs (e.g.
+          // duration-300 / duration-500) fall through to the overlap check so
+          // they still conflict, only cross-prefix pairs compose. No capture
+          // group means "always compose within group" (e.g. prose).
           const COMPLEMENTARY_GROUPS = [
-            /^(?:from|via|to)-/, // gradient stops (share --tw-gradient-stops)
-            /^(?:transition|duration|ease|delay)(?:-|$)/, // transition composition (transition-all has no custom vars)
-            /^-?(?:translate|scale|rotate|skew)-/, // transform axis composition (overlap not in cssProps)
+            /^(from|via|to)-/, // gradient stops (share --tw-gradient-stops)
+            /^(transition|duration|ease|delay)(?:-|$)/, // transition composition (transition-all has no custom vars)
+            /^-?(translate|scale|rotate|skew)-/, // transform axis composition (overlap not in cssProps)
             /^prose(?:-|$)/, // prose + prose-sm/lg/xl modifiers
           ]
           // Pairs where one utility sets defaults and the other overrides a specific property
@@ -106,7 +110,13 @@ export const noConflictingClasses = defineRule({
             else if (ub.endsWith('!')) ub = ub.slice(0, -1)
             // Complementary utilities within the same group
             for (const re of COMPLEMENTARY_GROUPS) {
-              if (re.test(ua) && re.test(ub)) return true
+              const ma = ua.match(re)
+              const mb = ub.match(re)
+              if (!ma || !mb) continue
+              // No capture group: always compose within group
+              if (ma[1] === undefined) return true
+              // Different prefix: compose; same prefix: fall through to overlap check
+              if (ma[1] !== mb[1]) return true
             }
             // Composition pairs where one sets defaults and the other overrides
             for (const [reA, reB] of COMPOSITION_PAIRS) {
