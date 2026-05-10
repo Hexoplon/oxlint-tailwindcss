@@ -14,7 +14,7 @@ const ENTRY_POINT = resolve(__dirname, '../fixtures/default.css')
 const PROSE_ENTRY = resolve(__dirname, '../fixtures/with-typography.css')
 const LETTER_SPACING_ENTRY = resolve(__dirname, '../fixtures/with-letter-spacing.css')
 const ANIMATE_ENTRY = resolve(__dirname, '../fixtures/with-tailwindcss-animate.css')
-const ANIMATE_ENTRY = resolve(__dirname, '../fixtures/with-tailwindcss-animate.css')
+const TW_ANIMATE_CSS_ENTRY = resolve(__dirname, '../fixtures/with-tw-animate-css.css')
 
 // --- Default design system tests ---
 
@@ -309,6 +309,44 @@ describe('tailwindcss-animate composition', () => {
       },
       {
         code: '<div className="running paused" />',
+        filename: 'test.tsx',
+        errors: [{ messageId: 'conflict' }],
+      },
+    ],
+  })
+})
+
+// --- tw-animate-css utilities compose through CSS custom properties ---
+
+describe('tw-animate-css composition', () => {
+  beforeAll(() => {
+    resetDesignSystem()
+    getLoadedDesignSystem(TW_ANIMATE_CSS_ENTRY)
+  })
+
+  const tester = new RuleTester()
+
+  tester.run('no-conflicting-classes (tw-animate-css)', noConflictingClasses, {
+    valid: [
+      {
+        code: '<div className="animate-in fade-in zoom-in slide-in-from-top" />',
+        filename: 'test.tsx',
+      },
+      {
+        code: '<div className="animate-out fade-out zoom-out slide-out-to-right" />',
+        filename: 'test.tsx',
+      },
+      { code: '<div className="animate-in fade-in blur-in" />', filename: 'test.tsx' },
+      { code: '<div className="animate-out fade-out blur-out" />', filename: 'test.tsx' },
+      { code: '<div className="animate-in slide-in-from-start" />', filename: 'test.tsx' },
+      { code: '<div className="animate-out slide-out-to-end-8" />', filename: 'test.tsx' },
+      { code: '<div className="animate-accordion-down" />', filename: 'test.tsx' },
+      { code: '<div className="animate-collapsible-up" />', filename: 'test.tsx' },
+      { code: '<div className="animate-caret-blink" />', filename: 'test.tsx' },
+    ],
+    invalid: [
+      {
+        code: '<div className="running play-state-initial" />',
         filename: 'test.tsx',
         errors: [{ messageId: 'conflict' }],
       },
