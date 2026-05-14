@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.8.4 (2026-05-14)
+
+- **Reduce design-system precompute memory usage** — The sync precompute path now stores fewer duplicate intermediate structures while preserving the generated cache snapshot.
+- **Share design-system runtime worker infrastructure** — Sort and canonicalization services now use a shared runtime-service implementation, reducing duplicated worker/Atomics plumbing and keeping timeout behavior consistent.
+- **Lazy load conflict CSS properties** — `no-conflicting-classes` now defers CSS property data work until needed, reducing upfront design-system cache cost for lint runs that do not require conflict analysis.
+- 1117 tests.
+
 ## 0.8.3 (2026-05-14)
 
 - **Fix relative `entryPoint` resolution across package cwd values** — `settings.tailwindcss.entryPoint` now resolves relative paths from the nearest oxlint config ancestor when available, so root hooks and package-level tasks load the same Tailwind design system. Fixed `entryPoint: string[]` proximity checks to use the same normalized paths while preserving auto-detection behavior.
