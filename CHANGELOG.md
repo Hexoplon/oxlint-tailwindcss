@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.8.5 (2026-05-14)
+
+- **Fix `__require is not defined` in ESM bundle** — tsdown rewrites `require(...)` to `__require(...)` in the bundled ESM output and defines the shim only at the top of the bundle. The functions stringified into `PRECOMPUTE_SCRIPT` (sync-loader) and `WORKER_SCRIPT` (runtime-service) inherited the rewritten calls, so the spawned `node -e` child and `Worker { eval: true }` thread crashed at startup with `__require is not defined` and DS-dependent rules silently fell back. Both scripts now prepend `var __require = require;` so the rewritten calls resolve to the native `require`. Adds a regression test that reproduces the failure mode in isolation.
+- 1122 tests (up from 1117).
+
 ## 0.8.4 (2026-05-14)
 
 - **Reduce design-system precompute memory usage** — The sync precompute path now stores fewer duplicate intermediate structures while preserving the generated cache snapshot.

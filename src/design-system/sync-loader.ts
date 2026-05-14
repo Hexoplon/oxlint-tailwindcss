@@ -354,7 +354,14 @@ async function precomputeMain(): Promise<void> {
   }
 }
 
+// The ESM build of this package is bundled by tsdown, which rewrites every
+// `require(...)` call to `__require(...)` (a `createRequire` shim defined at
+// the top of the bundle). The functions interpolated below are stringified
+// from this module, so their `require` calls also become `__require`. The
+// child `node -e` process has no such shim, so we alias it to the native
+// `require` here. Same shim is used in `runtime-service.ts` for the worker.
 const PRECOMPUTE_SCRIPT = `
+var __require = require;
 ${resolveImport}
 ${extractComponentClasses}
 ${precomputeMain}

@@ -16,7 +16,13 @@ const DATA_OFFSET = HEADER_INTS * 4 + 4 // 20 bytes
 const INIT_TIMEOUT = 30_000
 const REQUEST_TIMEOUT = 10_000
 
+// The ESM build is bundled by tsdown, which rewrites `require(...)` to
+// `__require(...)` (a `createRequire` shim at the bundle top). This script
+// runs in a Worker with `eval: true`, where the bundle's shim is unavailable
+// but Node's native `require` is. Alias one to the other so the rewritten
+// calls below resolve. Mirrors the shim in `sync-loader.ts`.
 const WORKER_SCRIPT = `
+var __require = require;
 const { workerData } = require('worker_threads');
 
 ${extractRootCssProps}
