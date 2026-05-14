@@ -70,6 +70,7 @@ export const noConflictingClasses = defineRule({
             /^(from|via|to)-/, // gradient stops (share --tw-gradient-stops)
             /^(transition|duration|ease|delay)(?:-|$)/, // transition composition (transition-all has no custom vars)
             /^-?(translate|scale|rotate|skew)-/, // transform axis composition (overlap not in cssProps)
+            /^-?mask-((?:linear|radial|conic|[trblxy])(?:-(?:from|via|to|at))?)(?:-|$)/, // mask gradients: capture "<family>" or "<family>-<role>"; cross-family or cross-role composes
             /^prose(?:-|$)/, // prose + prose-sm/lg/xl modifiers
           ]
           // Pairs where one utility sets defaults and the other overrides a specific property
@@ -81,6 +82,11 @@ export const noConflictingClasses = defineRule({
             [/^prose(?:-|$)/, /^max-w-/], // prose sets max-width, max-w-* overrides
             [/^animate-in$/, /^(?:fade|spin|zoom|blur)-in(?:-|$)|^slide-in-from-/], // animate-in sets enter defaults, *-in modifiers override one each
             [/^animate-out$/, /^(?:fade|spin|zoom|blur)-out(?:-|$)|^slide-out-to-/], // animate-out sets exit defaults, *-out modifiers override one each
+            // mask-composite mode + mask gradient compose; two composite modes don't match this pair and still conflict on mask-composite
+            [
+              /^mask-(?:add|subtract|intersect|exclude)$/,
+              /^-?mask-(?:linear|radial|conic|[trblxy])-/,
+            ],
           ]
 
           // Detect composition via CSS custom properties: if both classes use
@@ -93,6 +99,17 @@ export const noConflictingClasses = defineRule({
             return !customA.some((p) => customB.includes(p))
           }
 
+          // Detect a narrowing override: the later class's CSS properties are a
+          // strict subset of the earlier class's, so the later class refines one
+          // of the shorthand's properties (size-4 h-6, rounded-t-lg rounded-tl-sm,
+          // truncate text-clip). Direction-sensitive: the inverse means the wider
+          // later class clobbers a prior narrower override.
+          function isNarrowingOverride(propsEarlier: string[], propsLater: string[]): boolean {
+            if (propsLater.length === 0 || propsLater.length >= propsEarlier.length) return false
+            const setEarlier = new Set(propsEarlier)
+            return propsLater.every((p) => setEarlier.has(p))
+          }
+
           function shouldSkipPair(
             a: string,
             b: string,
@@ -101,6 +118,8 @@ export const noConflictingClasses = defineRule({
           ): boolean {
             // CSS custom property composition (handles shadow/ring, filter, contain, etc.)
             if (isCompositionViaCssVars(propsA, propsB)) return true
+            // Narrowing override (shorthand → longhand on one of its props)
+            if (isNarrowingOverride(propsA, propsB)) return true
 
             let ua = extractUtility(a)
             let ub = extractUtility(b)

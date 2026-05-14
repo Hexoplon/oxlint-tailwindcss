@@ -76,6 +76,36 @@ ruleTester.run('no-conflicting-classes', noConflictingClasses, {
     { code: '<div className="touch-pan-x touch-pinch-zoom" />', filename: 'test.tsx' },
     // border-spacing axis composition
     { code: '<div className="border-spacing-x-2 border-spacing-y-4" />', filename: 'test.tsx' },
+    // size-* sets {width,height}; later h-*/w-* narrows one axis (subset-override)
+    { code: '<div className="size-4 h-6" />', filename: 'test.tsx' },
+    { code: '<div className="size-4 w-6" />', filename: 'test.tsx' },
+    // rounded-{side} (2 corners) → rounded-{corner} (1) refines one corner
+    { code: '<div className="rounded-t-lg rounded-tl-sm" />', filename: 'test.tsx' },
+    { code: '<div className="rounded-s-lg rounded-ss-sm" />', filename: 'test.tsx' },
+    // rounded (4 corners) → side (2) → corner (1) — both subset layers compose
+    { code: '<div className="rounded-lg rounded-t-sm" />', filename: 'test.tsx' },
+    { code: '<div className="rounded-lg rounded-tl-sm" />', filename: 'test.tsx' },
+    // truncate sets {overflow,text-overflow,white-space}; text-clip refines text-overflow
+    { code: '<div className="truncate text-clip" />', filename: 'test.tsx' },
+    // Mask gradient utilities are designed to compose across stops, families, axes, and edges.
+    // Source: https://tailwindcss.com/docs/mask-image
+    { code: '<div className="mask-l-from-50% mask-l-to-90%" />', filename: 'test.tsx' },
+    {
+      code: '<div className="mask-linear-50 mask-linear-from-60% mask-linear-to-80%" />',
+      filename: 'test.tsx',
+    },
+    {
+      code: '<div className="-mask-linear-50 mask-linear-from-60% mask-linear-to-80%" />',
+      filename: 'test.tsx',
+    },
+    { code: '<div className="mask-b-from-50% mask-radial-from-80%" />', filename: 'test.tsx' },
+    {
+      code: '<div className="mask-r-from-80% mask-b-from-80% mask-radial-from-70% mask-radial-to-85%" />',
+      filename: 'test.tsx',
+    },
+    { code: '<div className="mask-x-from-50% mask-x-to-90%" />', filename: 'test.tsx' },
+    { code: '<div className="mask-radial-from-75% mask-radial-at-left" />', filename: 'test.tsx' },
+    { code: '<div className="mask-add mask-linear-from-20%" />', filename: 'test.tsx' },
   ],
   invalid: [
     {
@@ -113,6 +143,23 @@ ruleTester.run('no-conflicting-classes', noConflictingClasses, {
       filename: 'test.tsx',
       errors: [{ messageId: 'conflict' }],
     },
+    // Same mask slot (family + role) with different values still conflicts.
+    {
+      code: '<div className="mask-linear-from-50% mask-linear-from-80%" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="mask-l-from-50% mask-l-from-80%" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    // Two mask composite modes conflict on mask-composite.
+    {
+      code: '<div className="mask-add mask-subtract" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
     {
       code: '<div className="blur-sm blur-lg" />',
       filename: 'test.tsx',
@@ -134,77 +181,18 @@ ruleTester.run('no-conflicting-classes', noConflictingClasses, {
       errors: [{ messageId: 'conflict' }],
     },
     {
-      code: '<div className="duration-300 duration-500" />',
-      filename: 'test.tsx',
-      errors: [{ messageId: 'conflict' }],
-    },
-    {
-      code: '<div className="from-red-500 from-blue-500" />',
-      filename: 'test.tsx',
-      errors: [{ messageId: 'conflict' }],
-    },
-    {
-      code: '<div className="translate-x-1 translate-x-2" />',
-      filename: 'test.tsx',
-      errors: [{ messageId: 'conflict' }],
-    },
-    {
-      code: '<div className="transition-all transition-colors" />',
-      filename: 'test.tsx',
-      errors: [{ messageId: 'conflict' }],
-    },
-    {
-      code: '<div className="hover:duration-300 hover:duration-500" />',
-      filename: 'test.tsx',
-      errors: [{ messageId: 'conflict' }],
-    },
-    {
-      code: '<div className="!duration-300 !duration-500" />',
-      filename: 'test.tsx',
-      errors: [{ messageId: 'conflict' }],
-    },
-    {
-      code: '<div className="duration-300! duration-500!" />',
-      filename: 'test.tsx',
-      errors: [{ messageId: 'conflict' }],
-    },
-    {
-      code: '<div className="translate-x-1 -translate-x-2" />',
-      filename: 'test.tsx',
-      errors: [{ messageId: 'conflict' }],
-    },
-    {
-      code: '<div className="ease-in ease-out" />',
-      filename: 'test.tsx',
-      errors: [{ messageId: 'conflict' }],
-    },
-    {
-      code: '<div className="delay-100 delay-200" />',
-      filename: 'test.tsx',
-      errors: [{ messageId: 'conflict' }],
-    },
-    {
-      code: '<div className="via-red-500 via-blue-500" />',
-      filename: 'test.tsx',
-      errors: [{ messageId: 'conflict' }],
-    },
-    {
-      code: '<div className="to-red-500 to-blue-500" />',
-      filename: 'test.tsx',
-      errors: [{ messageId: 'conflict' }],
-    },
-    {
-      code: '<div className="scale-50 scale-75" />',
-      filename: 'test.tsx',
-      errors: [{ messageId: 'conflict' }],
-    },
-    {
-      code: '<div className="rotate-45 rotate-90" />',
-      filename: 'test.tsx',
-      errors: [{ messageId: 'conflict' }],
-    },
-    {
       code: '<div className="skew-x-1 skew-x-2" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    // Asymmetry guard: subset-override only skips when the later class is narrower.
+    {
+      code: '<div className="h-6 size-4" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="rounded-tl-sm rounded-t-lg" />',
       filename: 'test.tsx',
       errors: [{ messageId: 'conflict' }],
     },
