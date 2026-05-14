@@ -3,6 +3,7 @@ import { createExtractorVisitors, preserveSpaces, type ClassLocation } from '../
 import { rebuildClassString, splitClassesWithSeparators } from '../utils/class-splitter'
 import { splitUtilityAndVariant } from '../utils/class-parser'
 import { createLazyLoader } from '../design-system/loader'
+import { preserveSortedClassOrder } from '../utils/sort-preservation'
 
 // Mapping of deprecated classes in TW v4 to their replacements
 export const DEPRECATED_MAP: Record<string, string> = {
@@ -101,10 +102,17 @@ export const noDeprecatedClasses = defineRule({
         if (offending.length === 0) continue
 
         const replacements = new Map(offending.map(({ cls, replacement }) => [cls, replacement]))
-        const fixedValue = rebuildClassString(
-          split,
-          classes.map((cls) => replacements.get(cls) ?? cls),
-        )
+        const replacedClasses = classes.map((cls) => replacements.get(cls) ?? cls)
+        const fixedClasses = dsResult
+          ? preserveSortedClassOrder(
+              context,
+              dsResult.cache,
+              dsResult.entryPoint,
+              classes,
+              replacedClasses,
+            )
+          : replacedClasses
+        const fixedValue = rebuildClassString(split, fixedClasses)
 
         for (let i = 0; i < offending.length; i++) {
           const { cls, replacement } = offending[i]

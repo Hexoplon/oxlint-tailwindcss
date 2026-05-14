@@ -110,10 +110,12 @@ describe('shadcn compatibility', () => {
     invalid: [],
   })
 
-  // Multi-segment shadcn tokens convert paren/bracket forms of raw vars
-  // (--card-foreground) directly to the named utility.
+  // Multi-segment shadcn tokens convert paren raw vars directly to the named utility.
   new RuleTester().run('prefer-theme-tokens on multi-segment vars', preferThemeTokens, {
-    valid: [{ code: '<div className="bg-card-foreground" />', filename: 'test.tsx' }],
+    valid: [
+      { code: '<div className="bg-card-foreground" />', filename: 'test.tsx' },
+      { code: '<div className="bg-[var(--card-foreground)]" />', filename: 'test.tsx' },
+    ],
     invalid: [
       {
         code: '<div className="bg-(--card-foreground)" />',

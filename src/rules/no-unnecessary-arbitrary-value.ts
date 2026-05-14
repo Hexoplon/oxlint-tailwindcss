@@ -3,6 +3,7 @@ import { createExtractorVisitors, preserveSpaces, type ClassLocation } from '../
 import { rebuildClassString, splitClassesWithSeparators } from '../utils/class-splitter'
 import { hasArbitraryValue, splitUtilityAndVariant } from '../utils/class-parser'
 import { createLazyLoader } from '../design-system/loader'
+import { preserveSortedClassOrder } from '../utils/sort-preservation'
 
 export const noUnnecessaryArbitraryValue = defineRule({
   meta: {
@@ -33,7 +34,7 @@ export const noUnnecessaryArbitraryValue = defineRule({
     function check(locations: ClassLocation[]) {
       const ds = getDS()
       if (!ds) return
-      const { cache } = ds
+      const { cache, entryPoint } = ds
       for (const loc of locations) {
         const split = splitClassesWithSeparators(loc.value)
         const classes = split.classes
@@ -66,10 +67,15 @@ export const noUnnecessaryArbitraryValue = defineRule({
         if (offending.length === 0) continue
 
         const replacements = new Map(offending.map(({ cls, replacement }) => [cls, replacement]))
-        const fixedValue = rebuildClassString(
-          split,
-          classes.map((cls) => replacements.get(cls) ?? cls),
+        const replacedClasses = classes.map((cls) => replacements.get(cls) ?? cls)
+        const fixedClasses = preserveSortedClassOrder(
+          context,
+          cache,
+          entryPoint,
+          classes,
+          replacedClasses,
         )
+        const fixedValue = rebuildClassString(split, fixedClasses)
 
         for (let i = 0; i < offending.length; i++) {
           const { cls, replacement } = offending[i]

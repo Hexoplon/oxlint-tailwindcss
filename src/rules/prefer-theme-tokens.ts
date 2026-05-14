@@ -3,6 +3,7 @@ import { createExtractorVisitors, preserveSpaces, type ClassLocation } from '../
 import { rebuildClassString, splitClassesWithSeparators } from '../utils/class-splitter'
 import { splitUtilityAndVariant } from '../utils/class-parser'
 import { createLazyLoader } from '../design-system/loader'
+import { preserveSortedClassOrder } from '../utils/sort-preservation'
 
 /**
  * Match `prefix-(--name)` or `prefix-(--name)/modifier`.
@@ -10,19 +11,11 @@ import { createLazyLoader } from '../design-system/loader'
  */
 const PAREN_VAR_RE = /^(.+?)-\(--([\w-]+)\)(\/[^/\s]+)?$/
 
-/**
- * Match `prefix-[var(--name)]` or `prefix-[var(--name)]/modifier`.
- * Captures: 1=prefix, 2=variable name, 3=optional `/modifier`.
- */
-const BRACKET_VAR_RE = /^(.+?)-\[var\(--([\w-]+)\)\](\/[^/\s]+)?$/
-
 function detectRawVariable(
   utility: string,
 ): { prefix: string; varName: string; modifier: string } | null {
   const paren = PAREN_VAR_RE.exec(utility)
   if (paren) return { prefix: paren[1], varName: paren[2], modifier: paren[3] ?? '' }
-  const bracket = BRACKET_VAR_RE.exec(utility)
-  if (bracket) return { prefix: bracket[1], varName: bracket[2], modifier: bracket[3] ?? '' }
   return null
 }
 
@@ -56,7 +49,7 @@ export const preferThemeTokens = defineRule({
     function check(locations: ClassLocation[]) {
       const ds = getDS()
       if (!ds) return
-      const { cache } = ds
+      const { cache, entryPoint } = ds
 
       for (const loc of locations) {
         const split = splitClassesWithSeparators(loc.value)
@@ -97,10 +90,15 @@ export const preferThemeTokens = defineRule({
         if (offending.length === 0) continue
 
         const replacements = new Map(offending.map(({ cls, replacement }) => [cls, replacement]))
-        const fixedValue = rebuildClassString(
-          split,
-          classes.map((cls) => replacements.get(cls) ?? cls),
+        const replacedClasses = classes.map((cls) => replacements.get(cls) ?? cls)
+        const fixedClasses = preserveSortedClassOrder(
+          context,
+          cache,
+          entryPoint,
+          classes,
+          replacedClasses,
         )
+        const fixedValue = rebuildClassString(split, fixedClasses)
 
         for (let i = 0; i < offending.length; i++) {
           const { cls, replacement } = offending[i]

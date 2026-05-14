@@ -5,6 +5,7 @@ import { utilityHasDynamicValue } from '../utils/class-parser'
 import { createLazyLoader, rootFontSizeFromSettings } from '../design-system/loader'
 import { canonicalizeClassesSync } from '../design-system/canonicalize-service'
 import { safeSettings } from '../types'
+import { preserveSortedClassOrder } from '../utils/sort-preservation'
 
 function needsRuntimeCanonicalization(cls: string): boolean {
   return utilityHasDynamicValue(cls) || cls.includes('[') || cls.includes('(')
@@ -116,6 +117,14 @@ export const enforceCanonical = defineRule({
           }
         }
 
+        const fixedClasses = preserveSortedClassOrder(
+          context,
+          cache,
+          entryPoint,
+          classes,
+          canonicals,
+        )
+        const fixedValue = rebuildClassString(split, fixedClasses)
         let firstNonCanonical = true
 
         for (let i = 0; i < classes.length; i++) {
@@ -125,7 +134,6 @@ export const enforceCanonical = defineRule({
 
           if (firstNonCanonical) {
             firstNonCanonical = false
-            const fixedValue = rebuildClassString(split, canonicals)
             context.report({
               node: loc.node,
               messageId: 'nonCanonical',
@@ -135,7 +143,6 @@ export const enforceCanonical = defineRule({
               },
             })
           } else {
-            const fixedValue = rebuildClassString(split, canonicals)
             context.report({
               node: loc.node,
               messageId: 'nonCanonical',

@@ -814,14 +814,13 @@ Detects arbitrary values that have a named Tailwind equivalent. The arbitrary fo
 
 #### `prefer-theme-tokens`
 
-Suggests replacing raw CSS variable references like `border-(--border)` or `bg-[var(--primary)]` with the equivalent named theme-token utility (`border-border`, `bg-primary`) when one exists in your design system.
+Suggests replacing raw CSS variable shorthand references like `border-(--border)` with the equivalent named theme-token utility (`border-border`) when one exists in your design system.
 
-Unlike `no-unnecessary-arbitrary-value`, this rule fires even when the named utility produces _different_ CSS — for example, in themes that wrap the raw variable in a color function (`--color-border: hsl(var(--border))`). Useful to match the official Tailwind VS Code extension's `suggestCanonicalClasses` behavior. **Off by default** because the replacement may change observable CSS in those setups. (When the theme exposes the variable directly with no wrapping function, `border-[var(--border)]` is CSS-equivalent to `border-border` and is owned by `no-unnecessary-arbitrary-value` instead.)
+Unlike `no-unnecessary-arbitrary-value`, this rule fires even when the named utility produces _different_ CSS — for example, in themes that wrap the raw variable in a color function (`--color-border: hsl(var(--border))`). Useful to match the official Tailwind VS Code extension's `suggestCanonicalClasses` behavior. **Off by default** because the replacement may change observable CSS in those setups. Bracket `var()` forms like `bg-[var(--primary)]` are left to `enforce-canonical` (`bg-(--primary)`) or `no-unnecessary-arbitrary-value` when exact CSS equivalence is proven.
 
 ```tsx
 // ❌ Bad → ✅ Fixed (when border-border is a valid utility)
 "border-(--border)"        → "border-border"
-"bg-[var(--primary)]"      → "bg-primary"
 "hover:bg-(--primary)/80"  → "hover:bg-primary/80"
 ```
 

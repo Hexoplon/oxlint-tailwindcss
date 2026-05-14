@@ -14,7 +14,7 @@
  *   │ rounded-[var(--radius-sm)] │ fires    │ fires       │ silent     │ (a)
  *   │ rounded-(--radius-sm)      │ fires    │ silent      │ silent     │ (b)
  *   │ bg-(--red-500)             │ silent   │ silent      │ fires      │ (c)
- *   │ bg-[var(--red-500)]        │ fires*   │ silent      │ fires      │ (d)
+ *   │ bg-[var(--red-500)]        │ fires*   │ silent      │ silent     │ (d)
  *   └────────────────────────────┴──────────┴─────────────┴────────────┘
  *   *enforce-canonical only changes the bracket→paren syntax.
  *
@@ -26,8 +26,8 @@
  *       the same reason as (a).
  *   (c) Raw variable matching utility suffix — only prefer-theme-tokens catches
  *       it (canonicalizeCandidates only resolves theme-token names).
- *   (d) Bracket form of (c) — canonicalizeCandidates rewrites the syntax,
- *       prefer-theme-tokens rewrites to the named utility directly.
+ *   (d) Bracket form of (c) — canonicalizeCandidates rewrites only the
+ *       variable syntax. prefer-theme-tokens waits for the paren form.
  *
  * Theme-token matrix where `--color-X` exposes the raw variable directly
  * (e.g. `@theme inline { --color-border: var(--border); }`, no wrapping
@@ -43,7 +43,7 @@
  *   *Only the bracket→paren syntax change. no-unnec fires because the
  *   bracket form is CSS-equivalent to border-border (both compile to
  *   `border-color: var(--border)`). prefer-tt stays silent on the bracket
- *   form thanks to its getNamedEquivalent guard — no-unnec owns it.
+ *   form because prefer-theme-tokens only handles paren shorthand — no-unnec owns it.
  */
 
 import { resolve } from 'node:path'
@@ -134,17 +134,14 @@ describe('prefer-theme-tokens coexistence (default theme)', () => {
       // prefer-theme-tokens' candidate `rounded-radius-sm` isn't a real utility.
       { code: '<div className="rounded-(--radius-sm)" />', filename: 'test.tsx' },
       { code: '<div className="rounded-[var(--radius-sm)]" />', filename: 'test.tsx' },
+      // Bracket var() forms canonicalize to paren shorthand before this
+      // heuristic can suggest a named theme token.
+      { code: '<div className="bg-[var(--red-500)]" />', filename: 'test.tsx' },
     ],
     invalid: [
-      // Raw variable matching utility suffix → only this rule catches it (c, d)
+      // Raw variable matching utility suffix → only this rule catches it (c)
       {
         code: '<div className="bg-(--red-500)" />',
-        filename: 'test.tsx',
-        errors: [{ messageId: 'preferNamed' }],
-        output: '<div className="bg-red-500" />',
-      },
-      {
-        code: '<div className="bg-[var(--red-500)]" />',
         filename: 'test.tsx',
         errors: [{ messageId: 'preferNamed' }],
         output: '<div className="bg-red-500" />',
@@ -203,8 +200,7 @@ describe('prefer-theme-tokens coexistence (shadcn-style theme)', () => {
   )
 
   // ── prefer-theme-tokens ─────────────────────────────────────────
-  // Bracket form is owned by no-unnecessary-arbitrary-value (CSS-equivalent),
-  // so prefer-theme-tokens' getNamedEquivalent guard silences it here.
+  // Bracket var() form is owned by enforce-canonical / no-unnecessary-arbitrary-value.
   new RuleTester().run('prefer-theme-tokens (shadcn theme)', preferThemeTokens, {
     valid: [
       { code: '<div className="border-(--no-such-var)" />', filename: 'test.tsx' },

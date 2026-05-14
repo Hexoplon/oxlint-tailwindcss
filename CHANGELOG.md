@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.8.2 (2026-05-14)
+
+- **Improve one-pass autofix convergence** — Class-transforming rules now preserve sorted class order when `enforce-sort-order` is also enabled, avoiding second-run sort errors after canonicalization, deprecation, unnecessary-arbitrary-value, or theme-token fixes.
+- **Refine `prefer-theme-tokens` ownership** — The rule no longer rewrites bracket `var()` forms like `h-[var(--radix-select-trigger-height)]` directly to named theme-token utilities. Those inputs now canonicalize first to Tailwind v4's CSS-variable shorthand (`h-(--radix-select-trigger-height)`) or use `no-unnecessary-arbitrary-value` when exact CSS equivalence is proven.
+- 1116 tests (up from 1108).
+
 ## 0.8.1 (2026-05-14)
 
 - **Fix `react-data-grid` false positives** — Built-in `react-data-grid` classes (`rdg`, `rdg-*`) are now treated as known non-Tailwind classes. `no-unknown-classes` ignores them, `enforce-sort-order` preserves their positions while sorting adjacent Tailwind classes, and `no-duplicate-classes`/`max-class-count` do not count them as Tailwind utilities.

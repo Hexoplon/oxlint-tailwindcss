@@ -45,8 +45,7 @@ describe('prefer-theme-tokens (shadcn-style theme)', () => {
       { code: '<div className="nonexistent-(--border)" />', filename: 'test.tsx' },
       // Directional sub-utility with unknown variable
       { code: '<div className="border-l-(--no-such-token)" />', filename: 'test.tsx' },
-      // Bracket form is CSS-equivalent to `border-border` with this fixture —
-      // owned by no-unnecessary-arbitrary-value; the getNamedEquivalent guard silences this rule.
+      // Bracket var() form is owned by enforce-canonical / no-unnecessary-arbitrary-value.
       { code: '<div className="border-[var(--border)]" />', filename: 'test.tsx' },
     ],
     invalid: [
@@ -124,13 +123,6 @@ describe('prefer-theme-tokens (shadcn-style theme)', () => {
         filename: 'test.tsx',
         errors: [{ messageId: 'preferNamed' }],
         output: '<div className="bg-primary/80" />',
-      },
-      // Bracket form with modifier
-      {
-        code: '<div className="bg-[var(--primary)]/50" />',
-        filename: 'test.tsx',
-        errors: [{ messageId: 'preferNamed' }],
-        output: '<div className="bg-primary/50" />',
       },
       // Directional sub-utility (border-l, border-x, etc.)
       {
@@ -220,6 +212,10 @@ describe('prefer-theme-tokens (no overlap with other rules)', () => {
       // Bracket form CSS-equivalent — handled by no-unnecessary-arbitrary-value
       { code: '<div className="bg-[var(--color-red-500)]" />', filename: 'test.tsx' },
       { code: '<div className="text-[var(--color-blue-700)]" />', filename: 'test.tsx' },
+      // Bracket var() form should canonicalize to paren shorthand first,
+      // not jump directly to a named theme-token utility.
+      { code: '<div className="bg-[var(--red-500)]" />', filename: 'test.tsx' },
+      { code: '<div className="bg-[var(--primary)]/50" />', filename: 'test.tsx' },
       // Paren form for a theme-prefixed token — handled by enforce-canonical
       { code: '<div className="bg-(--color-red-500)" />', filename: 'test.tsx' },
     ],
