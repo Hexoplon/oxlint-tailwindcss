@@ -133,6 +133,81 @@ ruleTester.run('no-conflicting-classes', noConflictingClasses, {
       filename: 'test.tsx',
       errors: [{ messageId: 'conflict' }],
     },
+    {
+      code: '<div className="duration-300 duration-500" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="from-red-500 from-blue-500" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="translate-x-1 translate-x-2" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="transition-all transition-colors" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="hover:duration-300 hover:duration-500" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="!duration-300 !duration-500" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="duration-300! duration-500!" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="translate-x-1 -translate-x-2" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="ease-in ease-out" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="delay-100 delay-200" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="via-red-500 via-blue-500" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="to-red-500 to-blue-500" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="scale-50 scale-75" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="rotate-45 rotate-90" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="skew-x-1 skew-x-2" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
   ],
 })
 
