@@ -39,7 +39,13 @@ jobs:
         run: pnpm test
 
       - name: Publish to npm
-        run: pnpm publish --no-git-checks --provenance --access public --tag rc
+        run: |
+          VERSION="$(node -p 'require("./package.json").version')"
+          TAG="latest"
+          if [[ "$VERSION" == *-rc.* ]]; then
+            TAG="rc"
+          fi
+          pnpm publish --no-git-checks --provenance --access public --tag "$TAG"
 
       - name: Create GitHub Release
         run: |
