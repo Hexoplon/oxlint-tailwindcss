@@ -1,6 +1,6 @@
 {
-  "name": "oxlint-tailwindcss",
-  "version": "0.7.1",
+  "name": "@hexoplon/oxlint-tailwindcss",
+  "version": "0.8.0-rc.1",
   "description": "Tailwind CSS linting rules for oxlint",
   "keywords": [
     "css",
@@ -10,15 +10,15 @@
     "tailwind",
     "tailwindcss"
   ],
-  "homepage": "https://github.com/sergioazoc/oxlint-tailwindcss#readme",
+  "homepage": "https://github.com/hexoplon/oxlint-tailwindcss#readme",
   "bugs": {
-    "url": "https://github.com/sergioazoc/oxlint-tailwindcss/issues"
+    "url": "https://github.com/hexoplon/oxlint-tailwindcss/issues"
   },
   "license": "MIT",
   "author": "Sergio Azocar",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sergioazoc/oxlint-tailwindcss.git"
+    "url": "git+https://github.com/hexoplon/oxlint-tailwindcss.git"
   },
   "files": [
     "dist"

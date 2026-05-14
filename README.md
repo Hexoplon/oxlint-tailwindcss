@@ -21,7 +21,7 @@ Read the story behind this plugin: [oxlint-tailwindcss: The Linting Plugin Tailw
 ## Installation
 
 ```bash
-pnpm add -D oxlint-tailwindcss
+pnpm add -D @hexoplon/oxlint-tailwindcss
 ```
 
 ## Setup
@@ -30,7 +30,7 @@ Add the plugin to your `.oxlintrc.json`:
 
 ```jsonc
 {
-  "jsPlugins": ["oxlint-tailwindcss"],
+  "jsPlugins": ["@hexoplon/oxlint-tailwindcss"],
   "rules": {
     // Correctness
     "tailwindcss/no-unknown-classes": "error",
@@ -83,7 +83,7 @@ If auto-detection doesn't find your CSS file, set `entryPoint` once in `settings
 
 ```jsonc
 {
-  "jsPlugins": ["oxlint-tailwindcss"],
+  "jsPlugins": ["@hexoplon/oxlint-tailwindcss"],
   "settings": {
     "tailwindcss": {
       "entryPoint": "app/tailwind.css",
@@ -198,7 +198,7 @@ You can extend these defaults via `settings.tailwindcss`. All values are **addit
 
 ```jsonc
 {
-  "jsPlugins": ["oxlint-tailwindcss"],
+  "jsPlugins": ["@hexoplon/oxlint-tailwindcss"],
   "settings": {
     "tailwindcss": {
       // Additional JSX attribute names to scan
