@@ -1,0 +1,304 @@
+/**
+ * Shared persistent design-system service using worker_threads + SharedArrayBuffer.
+ *
+ * Tailwind's design system is async to load, but oxlint rule visitors are sync.
+ * This worker loads one DS per entry point, then serves synchronous sort and
+ * canonicalization requests via Atomics.wait(). Keeping both operations in one
+ * worker avoids loading the same DS twice when both rules are enabled.
+ */
+
+import { Worker } from 'node:worker_threads'
+
+const BUFFER_SIZE = 4 * 1024 * 1024 // 4 MB
+const HEADER_INTS = 4
+const DATA_OFFSET = HEADER_INTS * 4 + 4 // 20 bytes
+const INIT_TIMEOUT = 30_000
+const REQUEST_TIMEOUT = 10_000
+
+const WORKER_SCRIPT = `
+const { workerData } = require('worker_threads');
+
+async function main() {
+  const { sharedBuffer, cssPath } = workerData;
+  const control = new Int32Array(sharedBuffer, 0, ${HEADER_INTS});
+  const lengthView = new DataView(sharedBuffer, ${HEADER_INTS * 4}, 4);
+  const dataArea = new Uint8Array(sharedBuffer, ${DATA_OFFSET});
+
+  let ds;
+  try {
+    const { __unstable__loadDesignSystem } = require(workerData.tailwindNodePath);
+    const { readFileSync } = require('fs');
+    const { dirname } = require('path');
+    const css = readFileSync(cssPath, 'utf-8');
+    ds = await __unstable__loadDesignSystem(css, { base: dirname(cssPath) });
+  } catch {
+    Atomics.store(control, 2, -1);
+    Atomics.notify(control, 2);
+    return;
+  }
+
+  Atomics.store(control, 2, 1);
+  Atomics.notify(control, 2);
+
+  while (true) {
+    Atomics.wait(control, 0, 0);
+
+    const len = lengthView.getUint32(0);
+    const requestStr = Buffer.from(dataArea.slice(0, len)).toString('utf-8');
+    Atomics.store(control, 0, 0);
+
+    let response;
+    try {
+      const request = JSON.parse(requestStr);
+      let result;
+
+      if (request.type === 'sort') {
+        const ordered = ds.getClassOrder(request.classes);
+        result = [...ordered]
+          .sort((a, b) => {
+            if (a[1] === null && b[1] === null) return 0;
+            if (a[1] === null) return -1;
+            if (b[1] === null) return 1;
+            return a[1] < b[1] ? -1 : a[1] > b[1] ? 1 : 0;
+          })
+          .map(([name]) => name);
+      } else if (request.type === 'canonicalize') {
+        const options = request.rem ? { rem: request.rem } : undefined;
+        // canonicalizeCandidates deduplicates input, so call it one class at a
+        // time to preserve request length/order.
+        result = request.classes.map((cls) => {
+          const r = ds.canonicalizeCandidates([cls], options);
+          return r[0] ?? cls;
+        });
+      } else {
+        result = null;
+      }
+
+      response = Buffer.from(JSON.stringify(result), 'utf-8');
+    } catch {
+      response = Buffer.from('null', 'utf-8');
+    }
+
+    dataArea.set(response, 0);
+    lengthView.setUint32(0, response.length);
+
+    Atomics.store(control, 1, 1);
+    Atomics.notify(control, 1);
+  }
+}
+main();
+`
+
+interface SortRequest {
+  type: 'sort'
+  classes: string[]
+}
+
+interface CanonicalizeRequest {
+  type: 'canonicalize'
+  classes: string[]
+  rem?: number
+}
+
+type RuntimeRequest = SortRequest | CanonicalizeRequest
+
+let worker: Worker | null = null
+let controlArray: Int32Array | null = null
+let lengthView: DataView | null = null
+let dataArea: Uint8Array | null = null
+let initialized = false
+let available = true
+let currentCssPath: string | null = null
+
+// Process-wide cache of canonicalized classes.
+// Key: `${cssPath}\0${rem}\0${className}` — isolates monorepos (multiple DSs)
+// and different rem settings. Value: canonicalized class string.
+const canonCache = new Map<string, string>()
+
+function ensureService(cssPath: string): boolean {
+  if (initialized && currentCssPath === cssPath) return available
+
+  if (initialized) {
+    cleanup()
+    initialized = false
+    available = true
+    controlArray = null
+    lengthView = null
+    dataArea = null
+  }
+
+  initialized = true
+  currentCssPath = cssPath
+
+  try {
+    // Resolve @tailwindcss/node from the parent thread where the plugin's
+    // dependencies are available, then pass the resolved path to the worker.
+    // This avoids module resolution issues in VS Code's extension host.
+    const tailwindNodePath = require.resolve('@tailwindcss/node')
+
+    const sharedBuffer = new SharedArrayBuffer(BUFFER_SIZE)
+    controlArray = new Int32Array(sharedBuffer, 0, HEADER_INTS)
+    lengthView = new DataView(sharedBuffer, HEADER_INTS * 4, 4)
+    dataArea = new Uint8Array(sharedBuffer, DATA_OFFSET)
+
+    worker = new Worker(WORKER_SCRIPT, {
+      eval: true,
+      workerData: { sharedBuffer, cssPath, tailwindNodePath },
+    })
+
+    const currentWorker = worker
+    currentWorker.unref()
+
+    currentWorker.on('error', () => {
+      available = false
+      if (worker === currentWorker) worker = null
+    })
+    currentWorker.on('exit', () => {
+      if (worker === currentWorker) worker = null
+    })
+
+    const result = Atomics.wait(controlArray, 2, 0, INIT_TIMEOUT)
+    if (result === 'timed-out' || controlArray[2] === -1) {
+      available = false
+      cleanup()
+      return false
+    }
+
+    // `worker.unref()` handles process exit; no exit listener (see exit-listeners.test.ts).
+    return true
+  } catch {
+    available = false
+    cleanup()
+    return false
+  }
+}
+
+function cleanup(): void {
+  if (worker) {
+    try {
+      worker.terminate()
+    } catch {}
+    worker = null
+  }
+}
+
+function resetRuntimeWorker(): void {
+  cleanup()
+  initialized = false
+  available = true
+  currentCssPath = null
+  controlArray = null
+  lengthView = null
+  dataArea = null
+}
+
+function callWorker<T>(cssPath: string, requestData: RuntimeRequest): T | null {
+  if (!ensureService(cssPath)) return null
+  if (!controlArray || !dataArea || !lengthView) return null
+
+  try {
+    const request = Buffer.from(JSON.stringify(requestData), 'utf-8')
+    if (request.length > BUFFER_SIZE - DATA_OFFSET) return null
+
+    dataArea.set(request, 0)
+    lengthView.setUint32(0, request.length)
+
+    Atomics.store(controlArray, 0, 1)
+    Atomics.notify(controlArray, 0)
+
+    const result = Atomics.wait(controlArray, 1, 0, REQUEST_TIMEOUT)
+    if (result === 'timed-out') {
+      resetRuntimeWorker()
+      return null
+    }
+
+    const responseLen = lengthView.getUint32(0)
+    const responseStr = Buffer.from(dataArea.slice(0, responseLen)).toString('utf-8')
+    Atomics.store(controlArray, 1, 0)
+
+    return JSON.parse(responseStr)
+  } catch {
+    resetRuntimeWorker()
+    return null
+  }
+}
+
+/**
+ * Sort classes using the official Tailwind CSS sort order via worker thread.
+ * Returns the sorted class array, or null if the service is unavailable.
+ */
+export function sortClassesSync(cssPath: string, classes: string[]): string[] | null {
+  return callWorker<string[]>(cssPath, { type: 'sort', classes })
+}
+
+/**
+ * Canonicalize classes using the Tailwind CSS design system via worker thread.
+ * Returns the canonicalized class array (same length/order as input), or null
+ * if the service is unavailable.
+ *
+ * Uses a process-wide per-class cache: the worker is invoked only for classes
+ * not already seen with this (cssPath, rem) combination.
+ */
+export function canonicalizeClassesSync(
+  cssPath: string,
+  classes: string[],
+  rem?: number,
+): string[] | null {
+  const out: string[] = Array.from({ length: classes.length })
+  const missingIdx: number[] = []
+  const missing: string[] = []
+  const cachePrefix = `${cssPath}\0${rem ?? ''}\0`
+
+  for (let i = 0; i < classes.length; i++) {
+    const key = cachePrefix + classes[i]
+    const hit = canonCache.get(key)
+    if (hit !== undefined) {
+      out[i] = hit
+    } else {
+      missingIdx.push(i)
+      missing.push(classes[i])
+    }
+  }
+
+  if (missing.length === 0) return out
+
+  // Deduplicate the worker request: if a location repeats a class, we don't
+  // need to canonicalize it twice. The per-class cache serves repeats in
+  // subsequent calls, but within a single call the cache is still cold.
+  const uniqueMissing = [...new Set(missing)]
+  const fresh = callWorker<string[]>(cssPath, {
+    type: 'canonicalize',
+    classes: uniqueMissing,
+    rem,
+  })
+  if (!fresh || fresh.length !== uniqueMissing.length) return null
+
+  const freshByClass = new Map<string, string>()
+  for (let k = 0; k < uniqueMissing.length; k++) {
+    freshByClass.set(uniqueMissing[k], fresh[k])
+  }
+
+  for (let j = 0; j < missing.length; j++) {
+    const cls = missing[j]
+    const value = freshByClass.get(cls) ?? cls
+    canonCache.set(cachePrefix + cls, value)
+    out[missingIdx[j]] = value
+  }
+
+  return out
+}
+
+/**
+ * Reset the shared runtime worker (for sort-service tests).
+ */
+export function resetSortRuntimeService(): void {
+  resetRuntimeWorker()
+}
+
+/**
+ * Reset the shared runtime worker and canonicalization cache (for tests).
+ */
+export function resetCanonicalizeRuntimeService(): void {
+  resetRuntimeWorker()
+  canonCache.clear()
+}
