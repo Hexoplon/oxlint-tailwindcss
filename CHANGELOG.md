@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-## 0.8.0-rc.2 (2026-05-14)
+## 0.8.0-rc.3 (2026-05-14)
 
-- **Publish scoped package** — Renamed the npm package to `@hexoplon/oxlint-tailwindcss`, updated package metadata to the `hexoplon/oxlint-tailwindcss` repository, and updated installation/configuration examples to use the scoped package name. Rule names remain under the `tailwindcss/*` namespace.
+- **Publish scoped package** — Renamed the npm package to `@hexoplon/oxlint-tailwindcss`, updated package metadata to the `Hexoplon/oxlint-tailwindcss` repository, and updated installation/configuration examples to use the scoped package name. Rule names remain under the `tailwindcss/*` namespace.
 - **Switch release publishing to npm trusted publishing** — The release workflow now uses GitHub Actions OIDC with `id-token: write` and tokenless `pnpm publish --provenance --access public`, removing the `NPM_TOKEN` requirement. The release job now runs on Node.js 24.
 - **Tailwind CSS v4.3 support** — Updated Tailwind dependencies and compatibility for v4.3, including canonicalization and logical/physical rule coverage for newly generated class forms.
 - **Improve `no-conflicting-classes` accuracy** — Added support for same-prefix complementary-group conflicts, narrowing override composition, mask gradient composition, composite-mode composition, and animate plugin class composition from `tailwindcss-animate` and `tw-animate-css`.
