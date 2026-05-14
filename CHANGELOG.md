@@ -4,13 +4,10 @@
 
 ## 0.8.0-rc.3 (2026-05-14)
 
-- **Publish scoped package** — Renamed the npm package to `@hexoplon/oxlint-tailwindcss`, updated package metadata to the `Hexoplon/oxlint-tailwindcss` repository, and updated installation/configuration examples to use the scoped package name. Rule names remain under the `tailwindcss/*` namespace.
-- **Switch release publishing to npm trusted publishing** — The release workflow now uses GitHub Actions OIDC with `id-token: write` and tokenless `pnpm publish --provenance --access public`, removing the `NPM_TOKEN` requirement. The release job now runs on Node.js 24.
 - **Tailwind CSS v4.3 support** — Updated Tailwind dependencies and compatibility for v4.3, including canonicalization and logical/physical rule coverage for newly generated class forms.
 - **Improve `no-conflicting-classes` accuracy** — Added support for same-prefix complementary-group conflicts, narrowing override composition, mask gradient composition, composite-mode composition, and animate plugin class composition from `tailwindcss-animate` and `tw-animate-css`.
 - **Improve theme-token/shadcn coverage** — Fixed false negatives for theme-token-heavy codebases and added integration coverage for shadcn-style themes.
 - **Improve `enforce-sort-order` correctness** — Default mode now skips and emits a one-time warning when Tailwind's official `ds.getClassOrder()` worker is unavailable, instead of applying a heuristic fallback that could mis-sort order-dependent stacked variants. Added coverage for stacked, arbitrary, state, breakpoint, and at-rule variant ordering.
-- **Improve maintenance tooling** — Updated dependencies and pnpm, added approved-build configuration for pnpm, and added Knip unused-code checks.
 
 ## 0.7.1 (2026-05-07)
 

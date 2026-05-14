@@ -16,6 +16,9 @@
   },
   "license": "MIT",
   "author": "Sergio Azocar",
+  "contributors": [
+    "Hexoplon"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/Hexoplon/oxlint-tailwindcss.git"
