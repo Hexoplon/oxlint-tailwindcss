@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 0.8.0-rc.1 (2026-05-14)
+## 0.8.0-rc.2 (2026-05-14)
 
 - **Publish scoped package** — Renamed the npm package to `@hexoplon/oxlint-tailwindcss`, updated package metadata to the `hexoplon/oxlint-tailwindcss` repository, and updated installation/configuration examples to use the scoped package name. Rule names remain under the `tailwindcss/*` namespace.
 - **Switch release publishing to npm trusted publishing** — The release workflow now uses GitHub Actions OIDC with `id-token: write` and tokenless `pnpm publish --provenance --access public`, removing the `NPM_TOKEN` requirement. The release job now runs on Node.js 24.
