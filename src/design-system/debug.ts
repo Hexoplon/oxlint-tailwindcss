@@ -1,6 +1,7 @@
 const PREFIX = '[oxlint-tailwindcss]'
 
 let _enabled: boolean | null = null
+const warnings = new Set<string>()
 
 /**
  * Check if debug logging is enabled.
@@ -37,8 +38,18 @@ export function debugLog(message: string): void {
 }
 
 /**
+ * Warn once for degraded behavior that affects rule correctness.
+ */
+export function warnOnce(key: string, message: string): void {
+  if (warnings.has(key)) return
+  warnings.add(key)
+  console.error(`${PREFIX} ${message}`)
+}
+
+/**
  * Reset debug state (for tests).
  */
 export function resetDebug(): void {
   _enabled = null
+  warnings.clear()
 }

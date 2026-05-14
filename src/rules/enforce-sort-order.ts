@@ -4,6 +4,7 @@ import { rebuildClassString, splitClassesWithSeparators } from '../utils/class-s
 import { splitUtilityAndVariant } from '../utils/class-parser'
 import { createLazyLoader } from '../design-system/loader'
 import { sortClassesSync } from '../design-system/sort-service'
+import { warnOnce } from '../design-system/debug'
 import { safeOptions } from '../types'
 
 interface Options {
@@ -52,23 +53,14 @@ export const enforceSortOrder = defineRule({
       const mode = getMode()
 
       function sortDefault(classes: string[]): string[] {
-        // Use persistent child process for exact official Tailwind sort order
         const dynamic = sortClassesSync(entryPoint, classes)
         if (dynamic) return dynamic
 
-        // Fallback to precomputed heuristic sort.
-        // Null-order classes (group/name, peer/name) sort first — matches
-        // the behavior of prettier-plugin-tailwindcss and oxfmt.
-        const ordered = cache.getClassOrder(classes)
-        const sorted = [...ordered].sort((a, b) => {
-          if (a[1] === null && b[1] === null) return 0
-          if (a[1] === null) return -1
-          if (b[1] === null) return 1
-          if (a[1] < b[1]) return -1
-          if (a[1] > b[1]) return 1
-          return 0
-        })
-        return sorted.map(([name]) => name)
+        warnOnce(
+          `sort-service-unavailable:${entryPoint}`,
+          `enforce-sort-order skipped because Tailwind's official class sorter could not be loaded for "${entryPoint}".`,
+        )
+        return classes
       }
 
       function sortStrict(classes: string[]): string[] {

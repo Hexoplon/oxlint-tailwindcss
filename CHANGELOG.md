@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- **Improve `enforce-sort-order` correctness** — Default mode now skips and emits a one-time warning when Tailwind's official `ds.getClassOrder()` worker is unavailable, instead of applying a heuristic fallback that could mis-sort order-dependent stacked variants. Added coverage for stacked, arbitrary, state, breakpoint, and at-rule variant ordering.
+
 ## 0.7.1 (2026-05-07)
 
 - **Fix `enforce-canonical` missing legacy v3 classes** ([#16](https://github.com/sergioazoc/oxlint-tailwindcss/issues/16)) — Classes that produce valid CSS in v4 but are absent from `getClassList()` (`break-words`, `order-none`, `overflow-ellipsis`, `flex-grow{,-0,-1}`, `flex-shrink{,-0,-1}`, `decoration-clone/slice`, `bg-gradient-to-*`, `start-N`, `end-N`, `-start-N`, `-end-N` including fractional values) were silently skipped by the rule, even though Tailwind's `canonicalizeCandidates()` does rewrite them (e.g. `break-words` → `wrap-break-word`, `start-1/2` → `inset-s-1/2`). The precompute step now feeds these legacy spellings explicitly: a hardcoded list for fixed renames plus dynamic derivation of `start-*`/`end-*` from the `inset-{s,e}-*` utilities present in the design system. Also adds them to the valid set so `no-unknown-classes` doesn't flag them. Disk cache version bumped 11 → 13.

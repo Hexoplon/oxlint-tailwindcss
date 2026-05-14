@@ -482,7 +482,7 @@ The px→named conversion (e.g. `p-[2px]` → `p-0.5`) depends on `rootFontSize`
 
 #### `enforce-sort-order`
 
-Sorts classes according to Tailwind's official class order — identical to [oxfmt](https://oxc.rs/docs/guide/usage/formatter) and [prettier-plugin-tailwindcss](https://github.com/tailwindlabs/prettier-plugin-tailwindcss). Uses `ds.getClassOrder()` from the Tailwind CSS engine for exact results.
+Sorts classes according to Tailwind's official class order — identical to [oxfmt](https://oxc.rs/docs/guide/usage/formatter) and [prettier-plugin-tailwindcss](https://github.com/tailwindlabs/prettier-plugin-tailwindcss). Uses `ds.getClassOrder()` from the Tailwind CSS engine for exact results. If the official sorter cannot be loaded, the rule skips default-mode sorting and prints a one-time warning instead of applying a heuristic autofix.
 
 ```tsx
 // ❌ Bad
@@ -492,7 +492,7 @@ Sorts classes according to Tailwind's official class order — identical to [oxf
 <div className="flex items-center p-4 text-red-500" />
 ```
 
-In `strict` mode, classes are grouped by variant prefix, sorted within each group by DS sort order, and groups are ordered: no-variant first, then by variant priority.
+In `strict` mode, classes are grouped by variant prefix, sorted within each group by precomputed DS sort order, and groups are ordered: no-variant first, then by variant priority. This mode is opinionated and does not claim exact parity with Tailwind's official sorter.
 
 ```tsx
 // ❌ Bad (strict mode)

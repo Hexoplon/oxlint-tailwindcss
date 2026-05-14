@@ -22,6 +22,16 @@ ruleTester.run('enforce-sort-order', enforceSortOrder, {
       code: '<div className="flex items-center p-4 text-red-500" />',
       filename: 'test.tsx',
     },
+    // Sorts whole class tokens only; it must not normalize order-sensitive
+    // stacked variants within a single class name.
+    {
+      code: '<div className="*:first:underline first:*:underline" />',
+      filename: 'test.tsx',
+    },
+    {
+      code: '<div className="[&>svg]:before:text-red-500 before:[&>svg]:text-red-500" />',
+      filename: 'test.tsx',
+    },
     { code: '<div className="flex" />', filename: 'test.tsx' },
   ],
   invalid: [
@@ -58,11 +68,50 @@ ruleTester.run('enforce-sort-order', enforceSortOrder, {
       errors: [{ messageId: 'unsorted' }],
       output: '<div className={`${base} flex text-red-500`} />',
     },
+    // Official Tailwind ordering for stacked variants. The tokens move, but
+    // `first:*:` and `*:first:` are preserved as distinct class names.
+    {
+      code: '<div className="first:*:underline *:first:underline" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'unsorted' }],
+      output: '<div className="*:first:underline first:*:underline" />',
+    },
+    {
+      code: '<div className="before:[&>svg]:text-red-500 [&>svg]:before:text-red-500" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'unsorted' }],
+      output: '<div className="[&>svg]:before:text-red-500 before:[&>svg]:text-red-500" />',
+    },
+    {
+      code: '<div className="data-[state=open]:block aria-expanded:block block" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'unsorted' }],
+      output: '<div className="block aria-expanded:block data-[state=open]:block" />',
+    },
+    {
+      code: '<div className="disabled:opacity-50 opacity-100 not-disabled:opacity-50" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'unsorted' }],
+      output: '<div className="opacity-100 not-disabled:opacity-50 disabled:opacity-50" />',
+    },
+    {
+      code: '<div className="sm:max-lg:flex flex max-lg:sm:flex" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'unsorted' }],
+      output: '<div className="flex max-lg:sm:flex sm:max-lg:flex" />',
+    },
+    {
+      code: '<div className="[@supports(display:grid)]:grid hover:grid grid" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'unsorted' }],
+      output: '<div className="grid hover:grid [@supports(display:grid)]:grid" />',
+    },
   ],
 })
 
-// Heuristic sort fallback (used when worker thread is unavailable, e.g. VS Code extension)
-describe('heuristic sort fallback', () => {
+// Cache lookup remains useful for strict mode and other internal callers, but
+// default enforce-sort-order no longer uses it as an autofix fallback.
+describe('cache class order lookup', () => {
   it('cache.getOrder resolves dynamic numeric values via prefix lookup', () => {
     // underline-offset-3 is NOT in getClassList() but is a valid Tailwind class
     expect(cache.getOrder('underline-offset-3')).not.toBeNull()
@@ -75,7 +124,6 @@ describe('heuristic sort fallback', () => {
 
   it('null-order classes (group/name, peer/name) sort first', () => {
     // Marker classes like group/name return null from getClassOrder.
-    // The heuristic sort must put them first to match oxfmt/prettier-plugin-tailwindcss.
     const classes = ['flex', 'group/sidebar', 'p-4', 'peer/input']
     const ordered = cache.getClassOrder(classes)
 
