@@ -74,6 +74,11 @@ ruleTester.run('no-conflicting-classes', noConflictingClasses, {
     // touch-action utilities compose
     { code: '<div className="touch-pan-x touch-pan-y" />', filename: 'test.tsx' },
     { code: '<div className="touch-pan-x touch-pinch-zoom" />', filename: 'test.tsx' },
+    // scrollbar color channels compose via independent CSS custom properties
+    {
+      code: '<div className="scrollbar-thumb-sky-700 scrollbar-track-sky-100" />',
+      filename: 'test.tsx',
+    },
     // border-spacing axis composition
     { code: '<div className="border-spacing-x-2 border-spacing-y-4" />', filename: 'test.tsx' },
     // size-* sets {width,height}; later h-*/w-* narrows one axis (subset-override)
@@ -172,6 +177,26 @@ ruleTester.run('no-conflicting-classes', noConflictingClasses, {
     },
     {
       code: '<div className="ring-1 ring-4" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="scrollbar-thin scrollbar-none" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="scrollbar-gutter-auto scrollbar-gutter-stable" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="zoom-75 zoom-100" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'conflict' }],
+    },
+    {
+      code: '<div className="tab-2 tab-4" />',
       filename: 'test.tsx',
       errors: [{ messageId: 'conflict' }],
     },

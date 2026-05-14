@@ -9,10 +9,14 @@ export const PHYSICAL_TO_LOGICAL: Record<string, string> = {
   mr: 'me',
   pl: 'ps',
   pr: 'pe',
-  left: 'start',
-  right: 'end',
+  top: 'inset-bs',
+  bottom: 'inset-be',
+  left: 'inset-s',
+  right: 'inset-e',
   'border-l': 'border-s',
   'border-r': 'border-e',
+  'border-t': 'border-bs',
+  'border-b': 'border-be',
   'rounded-l': 'rounded-s',
   'rounded-r': 'rounded-e',
   'rounded-tl': 'rounded-ss',
@@ -23,6 +27,10 @@ export const PHYSICAL_TO_LOGICAL: Record<string, string> = {
   'scroll-mr': 'scroll-me',
   'scroll-pl': 'scroll-ps',
   'scroll-pr': 'scroll-pe',
+  'scroll-mt': 'scroll-mbs',
+  'scroll-mb': 'scroll-mbe',
+  'scroll-pt': 'scroll-pbs',
+  'scroll-pb': 'scroll-pbe',
 }
 
 export const enforceLogical = defineRule({

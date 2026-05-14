@@ -36,6 +36,33 @@ ruleTester.run('no-unknown-classes', noUnknownClasses, {
     // Opacity modifiers
     { code: '<div className="bg-black/80" />', filename: 'test.tsx' },
     { code: '<div className="bg-blue-500/50 text-white/90" />', filename: 'test.tsx' },
+    // Tailwind v4.2 additions
+    {
+      code: '<div className="bg-mauve-500 text-olive-700 border-mist-300 ring-taupe-400" />',
+      filename: 'test.tsx',
+    },
+    {
+      code: '<div className="pbs-4 pbe-4 mbs-4 mbe-4 scroll-pbs-4 scroll-mbe-4 border-bs-2 border-be" />',
+      filename: 'test.tsx',
+    },
+    {
+      code: '<div className="inline-4 min-inline-0 max-inline-lg block-64 min-block-24 max-block-screen inset-s-0 inset-e-4 inset-bs-2 inset-be-8" />',
+      filename: 'test.tsx',
+    },
+    { code: '<div className={\'font-features-["tnum"]\'} />', filename: 'test.tsx' },
+    // Tailwind v4.3 additions
+    {
+      code: '<div className="@container-size @container-size/main scrollbar-auto scrollbar-thin scrollbar-none" />',
+      filename: 'test.tsx',
+    },
+    {
+      code: '<div className="scrollbar-thumb-slate-900/60 scrollbar-track-slate-900/10 scrollbar-gutter-auto scrollbar-gutter-stable scrollbar-gutter-both" />',
+      filename: 'test.tsx',
+    },
+    {
+      code: '<div className="zoom-75 zoom-(--preview-zoom) tab-4 tab-[12px]" />',
+      filename: 'test.tsx',
+    },
   ],
   invalid: [
     {

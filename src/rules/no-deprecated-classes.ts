@@ -23,6 +23,18 @@ export const DEPRECATED_MAP: Record<string, string> = {
   'bg-gradient-to-tl': 'bg-linear-to-tl',
 }
 
+function getDeprecatedReplacement(utility: string): string | null {
+  const fixed = DEPRECATED_MAP[utility]
+  if (fixed) return fixed
+
+  if (utility.startsWith('start-')) return `inset-s-${utility.slice(6)}`
+  if (utility.startsWith('-start-')) return `-inset-s-${utility.slice(7)}`
+  if (utility.startsWith('end-')) return `inset-e-${utility.slice(4)}`
+  if (utility.startsWith('-end-')) return `-inset-e-${utility.slice(5)}`
+
+  return null
+}
+
 export const noDeprecatedClasses = defineRule({
   meta: {
     type: 'problem',
@@ -67,7 +79,7 @@ export const noDeprecatedClasses = defineRule({
               ? utility.slice(0, -1)
               : utility
 
-          const replacement = DEPRECATED_MAP[bareUtility]
+          const replacement = getDeprecatedReplacement(bareUtility)
           if (!replacement) continue
 
           // If we have a design system, verify with canonicalize

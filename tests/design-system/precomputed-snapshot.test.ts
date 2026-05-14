@@ -67,12 +67,69 @@ describe('Precomputed Data Snapshot', () => {
       expect(data.validClasses).toContain('rounded')
       expect(data.validClasses).toContain('shadow')
     })
+
+    it('contains Tailwind v4.2 utility additions', () => {
+      const classes = [
+        'bg-mauve-500',
+        'text-olive-500',
+        'border-mist-500',
+        'ring-taupe-500',
+        'pbs-4',
+        'pbe-4',
+        'mbs-4',
+        'mbe-4',
+        'scroll-pbs-4',
+        'scroll-mbe-4',
+        'border-bs-2',
+        'border-be',
+        'inline-4',
+        'min-inline-0',
+        'max-inline-lg',
+        'block-64',
+        'min-block-24',
+        'max-block-screen',
+        'inset-s-0',
+        'inset-e-4',
+        'inset-bs-2',
+        'inset-be-8',
+      ]
+      for (const cls of classes) {
+        expect(data.validClasses).toContain(cls)
+      }
+    })
+
+    it('contains Tailwind v4.3 utility additions', () => {
+      const classes = [
+        '@container-size',
+        '@container-size/main',
+        'scrollbar-auto',
+        'scrollbar-thin',
+        'scrollbar-none',
+        'scrollbar-thumb-red-500',
+        'scrollbar-track-blue-500',
+        'scrollbar-gutter-auto',
+        'scrollbar-gutter-stable',
+        'scrollbar-gutter-both',
+        'zoom-75',
+        'zoom-100',
+        'tab-4',
+      ]
+      for (const cls of classes) {
+        expect(data.validClasses).toContain(cls)
+      }
+    })
   })
 
   describe('canonical', () => {
     it('has known canonical mappings', () => {
       // Negative zero → positive zero
       expect(data.canonical['-m-0']).toBe('m-0')
+    })
+
+    it('has Tailwind v4.2 deprecated inset canonical mappings', () => {
+      expect(data.canonical['start-4']).toBe('inset-s-4')
+      expect(data.canonical['-start-4']).toBe('-inset-s-4')
+      expect(data.canonical['end-full']).toBe('inset-e-full')
     })
 
     it('has a reasonable number of diffs (not all classes)', () => {

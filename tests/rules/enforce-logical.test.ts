@@ -8,13 +8,15 @@ ruleTester.run('enforce-logical', enforceLogical, {
     { code: '<div className="ms-4" />', filename: 'test.tsx' },
     { code: '<div className="me-4" />', filename: 'test.tsx' },
     { code: '<div className="ps-4 pe-4" />', filename: 'test.tsx' },
-    { code: '<div className="start-0 end-0" />', filename: 'test.tsx' },
+    { code: '<div className="inset-s-0 inset-e-0" />', filename: 'test.tsx' },
+    { code: '<div className="inset-bs-0 inset-be-0" />', filename: 'test.tsx' },
+    { code: '<div className="pbs-4 pbe-4 mbs-4 mbe-4" />', filename: 'test.tsx' },
     { code: '<div className="flex items-center" />', filename: 'test.tsx' },
   ],
   invalid: [
     // Generated from PHYSICAL_TO_LOGICAL — every entry is covered
     ...Object.entries(PHYSICAL_TO_LOGICAL).map(([physical, logical]) => {
-      const suffix = physical.includes('left') || physical.includes('right') ? '-0' : '-4'
+      const suffix = /^(?:top|bottom|left|right)$/.test(physical) ? '-0' : '-4'
       return {
         code: `<div className="${physical}${suffix}" />`,
         filename: 'test.tsx',

@@ -3,11 +3,13 @@ import { beforeAll } from 'vitest'
 import { RuleTester } from 'oxlint/plugins-dev'
 import { enforceCanonical } from '../../src/rules/enforce-canonical'
 import { getLoadedDesignSystem, resetDesignSystem } from '../../src/design-system/loader'
+import { resetCanonicalizeService } from '../../src/design-system/canonicalize-service'
 
 const ENTRY_POINT = resolve(__dirname, '../fixtures/default.css')
 
 beforeAll(() => {
   resetDesignSystem()
+  resetCanonicalizeService()
   getLoadedDesignSystem(ENTRY_POINT)
 })
 
@@ -259,6 +261,31 @@ ruleTester.run('enforce-canonical', enforceCanonical, {
       filename: 'test.tsx',
       errors: [{ messageId: 'nonCanonical' }],
       output: '<div className="grow-2" />',
+    },
+    // Tailwind v4.2/v4.3 canonicalization improvements
+    {
+      code: '<div className="ml-[calc(-1*var(--width))]" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="-ml-(--width)" />',
+    },
+    {
+      code: '<div className="-mt-[20in]" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="-mt-480" />',
+    },
+    {
+      code: '<div className="w-[calc(100%---spacing(60))]" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="w-[calc(100%-(--spacing(60)))]" />',
+    },
+    {
+      code: '<div className="[&:has(input)]:bg-red-500" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="has-[input]:bg-red-500" />',
     },
   ],
 })

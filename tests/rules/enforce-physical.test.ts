@@ -9,13 +9,13 @@ ruleTester.run('enforce-physical', enforcePhysical, {
     { code: '<div className="ml-4" />', filename: 'test.tsx' },
     { code: '<div className="mr-4" />', filename: 'test.tsx' },
     { code: '<div className="pl-4 pr-4" />', filename: 'test.tsx' },
-    { code: '<div className="left-0 right-0" />', filename: 'test.tsx' },
+    { code: '<div className="top-0 right-0 bottom-0 left-0" />', filename: 'test.tsx' },
     { code: '<div className="flex items-center" />', filename: 'test.tsx' },
   ],
   invalid: [
     // Generated from PHYSICAL_TO_LOGICAL (inverted) — every entry is covered
     ...Object.entries(PHYSICAL_TO_LOGICAL).map(([physical, logical]) => {
-      const suffix = logical.includes('start') || logical.includes('end') ? '-0' : '-4'
+      const suffix = logical.startsWith('inset-') ? '-0' : '-4'
       return {
         code: `<div className="${logical}${suffix}" />`,
         filename: 'test.tsx',
