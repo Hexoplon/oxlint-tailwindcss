@@ -214,8 +214,6 @@ export function canonicalizeClassesSync(
   classes: string[],
   rem?: number,
 ): string[] | null {
-  if (!ensureService(cssPath)) return null
-
   const out: string[] = Array.from({ length: classes.length })
   const missingIdx: number[] = []
   const missing: string[] = []
@@ -233,6 +231,8 @@ export function canonicalizeClassesSync(
   }
 
   if (missing.length === 0) return out
+
+  if (!ensureService(cssPath)) return null
 
   // Deduplicate the worker request: if a location repeats a class, we don't
   // need to canonicalize it twice. The per-class cache serves repeats in

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { resolve } from 'node:path'
 import {
   canonicalizeClassesSync,
@@ -9,10 +9,11 @@ const DEFAULT_CSS = resolve(__dirname, '../fixtures/default.css')
 const ALT_CSS = resolve(__dirname, '../fixtures/with-typography.css')
 
 describe('canonicalize-service cache', () => {
-  beforeEach(() => {
+  beforeAll(() => {
     resetCanonicalizeService()
   })
-  afterEach(() => {
+
+  afterAll(() => {
     resetCanonicalizeService()
   })
 
@@ -27,7 +28,7 @@ describe('canonicalize-service cache', () => {
   })
 
   it('second call with the same class is much faster than the first', () => {
-    const classes = ['p-[16px]', 'm-[8px]', 'flex', 'bg-[#3b82f6]']
+    const classes = ['p-[15px]', 'm-[7px]', 'bg-[#3b82f6]']
 
     const t1 = performance.now()
     const first = canonicalizeClassesSync(DEFAULT_CSS, classes, 16)
@@ -54,7 +55,7 @@ describe('canonicalize-service cache', () => {
   })
 
   it('different cssPaths do not collide in the cache', () => {
-    const classes = ['flex']
+    const classes = ['p-[14px]']
     const a = canonicalizeClassesSync(DEFAULT_CSS, classes, 16)
     // Switching cssPath restarts the worker but the cache (keyed by cssPath)
     // keeps entries from both design systems alive.
@@ -63,11 +64,16 @@ describe('canonicalize-service cache', () => {
     expect(b).not.toBeNull()
 
     // Going back to the original path must still return the same result.
+    const before = performance.now()
     const aAgain = canonicalizeClassesSync(DEFAULT_CSS, classes, 16)
+    const elapsed = performance.now() - before
     expect(aAgain).toEqual(a)
+    expect(elapsed).toBeLessThan(500)
   })
 
   it('reset clears cached entries (new call takes worker path again)', () => {
+    resetCanonicalizeService()
+
     const classes = ['p-[16px]']
     canonicalizeClassesSync(DEFAULT_CSS, classes, 16)
 

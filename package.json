@@ -49,7 +49,7 @@
     "dev": "tsdown --watch",
     "test": "vitest run --exclude 'tests/benchmarks/**'",
     "test:watch": "vitest --exclude 'tests/benchmarks/**'",
-    "bench": "vitest run tests/benchmarks --reporter=verbose",
+    "bench": "vitest run tests/benchmarks --reporter=verbose --no-file-parallelism",
     "lint": "oxlint",
     "format": "oxfmt --write .",
     "format:check": "oxfmt .",
