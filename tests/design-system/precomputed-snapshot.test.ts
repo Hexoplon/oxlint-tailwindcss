@@ -160,24 +160,8 @@ describe('Precomputed Data Snapshot', () => {
   })
 
   describe('cssProps', () => {
-    it('maps padding classes correctly', () => {
-      expect(data.cssProps['p-4']).toContain('padding')
-    })
-
-    it('maps display classes correctly', () => {
-      expect(data.cssProps['flex']).toContain('display')
-    })
-
-    it('maps background classes correctly', () => {
-      expect(data.cssProps['bg-blue-500']).toContain('background-color')
-    })
-
-    it('maps alignment classes correctly', () => {
-      expect(data.cssProps['items-center']).toContain('align-items')
-    })
-
-    it('has more than 5000 entries', () => {
-      expect(Object.keys(data.cssProps).length).toBeGreaterThan(5000)
+    it('is omitted from precomputed payloads', () => {
+      expect(data.cssProps).toBeUndefined()
     })
   })
 

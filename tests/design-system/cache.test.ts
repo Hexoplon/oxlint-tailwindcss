@@ -12,12 +12,6 @@ function makeData(overrides: Partial<PrecomputedData> = {}): PrecomputedData {
       'bg-blue-500': '300',
       'items-center': '150',
     },
-    cssProps: {
-      flex: ['display'],
-      'p-4': ['padding'],
-      'bg-blue-500': ['background-color'],
-      'items-center': ['align-items'],
-    },
     variantOrder: { hover: 10, focus: 20, dark: 30, sm: 40, md: 50 },
     componentClasses: ['prose', 'not-prose'],
     arbitraryEquivalents: { 'p-[1rem]': 'p-4', 'bg-[#3b82f6]': 'bg-blue-500' },
@@ -165,7 +159,9 @@ describe('getClassOrder', () => {
 
 describe('getCssProperties', () => {
   it('returns props for known classes', () => {
-    const cache = DesignSystemCache.fromPrecomputed(makeData())
+    const cache = DesignSystemCache.fromPrecomputed(
+      makeData({ cssProps: { flex: ['display'], 'p-4': ['padding'] } }),
+    )
     expect(cache.getCssProperties('p-4')).toEqual(['padding'])
     expect(cache.getCssProperties('flex')).toEqual(['display'])
   })
@@ -176,7 +172,7 @@ describe('getCssProperties', () => {
   })
 
   it('handles ! modifier', () => {
-    const cache = DesignSystemCache.fromPrecomputed(makeData())
+    const cache = DesignSystemCache.fromPrecomputed(makeData({ cssProps: { 'p-4': ['padding'] } }))
     expect(cache.getCssProperties('!p-4')).toEqual(['padding'])
     expect(cache.getCssProperties('p-4!')).toEqual(['padding'])
   })

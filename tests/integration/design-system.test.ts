@@ -6,6 +6,7 @@ import {
   type LoadResult,
 } from '../../src/design-system/loader'
 import { DesignSystemCache } from '../../src/design-system/cache'
+import { getCssPropertiesSync } from '../../src/design-system/css-props-service'
 
 const FIXTURE_PATH = resolve(__dirname, '../fixtures/default.css')
 const ANIMATE_FIXTURE_PATH = resolve(__dirname, '../fixtures/with-tailwindcss-animate.css')
@@ -94,11 +95,14 @@ describe('Design System Integration', () => {
   })
 
   it('extracts CSS properties from a class', () => {
-    const { cache } = result!
-    const propsP4 = cache.getCssProperties('p-4')
+    const props = getCssPropertiesSync(result!.entryPoint, ['p-4', 'flex'])
+    expect(props).not.toBeNull()
+    if (!props) throw new Error('Expected CSS properties')
+
+    const propsP4 = props.get('p-4') ?? []
     expect(propsP4).toContain('padding')
 
-    const propsFlex = cache.getCssProperties('flex')
+    const propsFlex = props.get('flex') ?? []
     expect(propsFlex).toContain('display')
   })
 

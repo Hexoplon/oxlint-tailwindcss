@@ -12,7 +12,7 @@
  * location through env (TAILWIND_NODE_PATH) and the script requires that
  * path directly. This file locks the fix down with two guards:
  *
- *   1. Static — the precompute script uses `process.env.TAILWIND_NODE_PATH`
+ *   1. Static — the precompute path uses `process.env.TAILWIND_NODE_PATH`
  *      and not a bare `require('@tailwindcss/node')`.
  *   2. Functional — `node -e "require(absolutePath)"` works from a cwd that
  *      has no node_modules at all, proving the resolution technique is
@@ -51,7 +51,8 @@ describe('pnpm strict workspace isolation', () => {
       'utf-8',
     )
     expect(source).not.toMatch(/require\(['"]@tailwindcss\/node['"]\)/)
-    expect(source).toMatch(/require\(process\.env\.TAILWIND_NODE_PATH\)/)
+    expect(source).toMatch(/process\.env\.TAILWIND_NODE_PATH/)
+    expect(source).toMatch(/require\(tailwindNodePath\)/)
   })
 
   it('node -e can require @tailwindcss/node by absolute path from an isolated cwd', () => {

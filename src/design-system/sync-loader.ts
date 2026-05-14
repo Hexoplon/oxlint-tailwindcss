@@ -3,7 +3,7 @@
  *
  * The problem: __unstable__loadDesignSystem is async, but oxlint's createOnce is sync.
  * The solution: spawn a child process that loads the design system, pre-computes all
- * data we need, and writes it as JSON. This runs ONCE at plugin init time.
+ * data we need, and writes it as JSON. This runs ONCE per unique CSS entry point.
  *
  * For arbitrary values (bg-[#123]) that aren't in the class list, we use heuristics.
  */
@@ -20,415 +20,360 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
 
 export interface PrecomputedData {
   /** All valid class names (candidatesToCss returned non-null) */
   validClasses: string[]
-  /** className → canonical form (only entries where canonical differs) */
+  /** className -> canonical form (only entries where canonical differs) */
   canonical: Record<string, string>
-  /** className → sort order as string (BigInt serialized) */
+  /** className -> sort order as string (BigInt serialized) */
   order: Record<string, string>
-  /** className → CSS property names affected */
-  cssProps: Record<string, string[]>
-  /** variant name → sort index from the design system */
+  /** className -> CSS property names affected. Legacy cache field; new payloads omit this. */
+  cssProps?: Record<string, string[]>
+  /** variant name -> sort index from the design system */
   variantOrder: Record<string, number>
   /** Classes from @layer components and modifier classes referenced via [class~="..."] */
   componentClasses: string[]
-  /** arbitraryForm → namedClass for unnecessary arbitrary value detection */
+  /** arbitraryForm -> namedClass for unnecessary arbitrary value detection */
   arbitraryEquivalents: Record<string, string>
 }
 
-const PRECOMPUTE_SCRIPT = `
-// Resolve @tailwindcss/node via an absolute path passed in by the parent
-// process — bare-specifier lookup from this child's cwd fails under pnpm
-// strict workspaces (the module lives under node_modules/.pnpm/... which
-// is not on the resolution path from the consumer's project root).
-const { __unstable__loadDesignSystem } = require(process.env.TAILWIND_NODE_PATH);
-const { readFileSync, writeFileSync } = require('fs');
-const { dirname, resolve } = require('path');
+function resolveImport(specifier: string, baseDir: string): string | null {
+  const { dirname, join, resolve } = require('path')
+  const { existsSync, readFileSync } = require('fs')
 
-function resolveImport(specifier, baseDir) {
-  // Relative import: ./file.css, ../file.css
-  if (specifier.startsWith('.')) return resolve(baseDir, specifier);
-  // Package import: tw-animate-css, @scope/pkg
-  const { join } = require('path');
-  const { existsSync } = require('fs');
-  // Walk up to find node_modules (monorepo support)
-  let dir = baseDir;
+  if (specifier.startsWith('.')) return resolve(baseDir, specifier)
+
+  let dir = baseDir
   while (true) {
-    const pkgDir = join(dir, 'node_modules', specifier);
+    const pkgDir = join(dir, 'node_modules', specifier)
     if (existsSync(pkgDir)) {
-      // Read package.json to find CSS entry (main, style, exports.style)
       try {
-        const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf-8'));
-        const entry = pkg.style || pkg.main || '';
-        if (entry.endsWith('.css')) return resolve(pkgDir, entry);
-        // Check exports["."].style
-        const exp = pkg.exports && pkg.exports['.'];
-        const styleEntry = typeof exp === 'object' && exp !== null ? exp.style : null;
-        if (styleEntry) return resolve(pkgDir, styleEntry);
+        const pkg = JSON.parse(readFileSync(join(pkgDir, 'package.json'), 'utf-8'))
+        const entry = pkg.style || pkg.main || ''
+        if (entry.endsWith('.css')) return resolve(pkgDir, entry)
+
+        const exp = pkg.exports && pkg.exports['.']
+        const styleEntry = typeof exp === 'object' && exp !== null ? exp.style : null
+        if (styleEntry) return resolve(pkgDir, styleEntry)
       } catch {}
-      // Fallback: try common CSS filenames
-      const fallbacks = ['index.css', 'dist/index.css', 'style.css', 'styles.css'];
-      for (const f of fallbacks) {
-        const p = join(pkgDir, f);
-        if (existsSync(p)) return p;
+
+      for (const fileName of ['index.css', 'dist/index.css', 'style.css', 'styles.css']) {
+        const path = join(pkgDir, fileName)
+        if (existsSync(path)) return path
       }
-      return null;
+
+      return null
     }
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
+
+    const parent = dirname(dir)
+    if (parent === dir) return null
+    dir = parent
   }
-  return null;
 }
 
-function extractComponentClasses(cssPath, baseDir) {
-  let css;
-  try { css = readFileSync(cssPath, 'utf-8'); } catch { return []; }
-  const files = [css];
-  const importRe = /@import\\s+['"]([^'"]+)['"]/g;
-  let m;
-  while ((m = importRe.exec(css)) !== null) {
-    const resolved = resolveImport(m[1], baseDir);
-    if (resolved) {
-      try { files.push(readFileSync(resolved, 'utf-8')); } catch {}
-    }
+function extractComponentClasses(cssPath: string, baseDir: string): string[] {
+  const { readFileSync } = require('fs')
+
+  let css: string
+  try {
+    css = readFileSync(cssPath, 'utf-8')
+  } catch {
+    return []
   }
-  const result = [];
+
+  const files = [css]
+  const importRe = /@import\s+['"]([^'"]+)['"]/g
+  let match: RegExpExecArray | null
+  while ((match = importRe.exec(css)) !== null) {
+    const resolved = resolveImport(match[1], baseDir)
+    if (!resolved) continue
+
+    try {
+      files.push(readFileSync(resolved, 'utf-8'))
+    } catch {}
+  }
+
+  const result: string[] = []
   for (const content of files) {
-    // Scan both @layer components AND @layer utilities
-    const layerRe = /@layer\\s+(?:components|utilities)\\s*\\{/g;
-    let lm;
-    while ((lm = layerRe.exec(content)) !== null) {
-      let depth = 1, i = lm.index + lm[0].length;
+    const layerRe = /@layer\s+(?:components|utilities)\s*\{/g
+    let layerMatch: RegExpExecArray | null
+    while ((layerMatch = layerRe.exec(content)) !== null) {
+      let depth = 1
+      let i = layerMatch.index + layerMatch[0].length
       while (i < content.length && depth > 0) {
-        if (content[i] === '{') depth++;
-        if (content[i] === '}') depth--;
-        i++;
+        if (content[i] === '{') depth++
+        if (content[i] === '}') depth--
+        i++
       }
-      const block = content.slice(lm.index + lm[0].length, i - 1);
-      const selRe = /\\.([\\w-]+)/g;
-      let sm;
-      while ((sm = selRe.exec(block)) !== null) result.push(sm[1]);
+
+      const block = content.slice(layerMatch.index + layerMatch[0].length, i - 1)
+      const selectorRe = /\.([\w-]+)/g
+      let selectorMatch: RegExpExecArray | null
+      while ((selectorMatch = selectorRe.exec(block)) !== null) result.push(selectorMatch[1])
     }
-    // Scan all class selectors anywhere in the file (.class-name)
-    const classSelRe = /\\.([a-zA-Z_][\\w-]*)/g;
-    let cs;
-    while ((cs = classSelRe.exec(content)) !== null) result.push(cs[1]);
+
+    const classSelectorRe = /\.([a-zA-Z_][\w-]*)/g
+    let classMatch: RegExpExecArray | null
+    while ((classMatch = classSelectorRe.exec(content)) !== null) result.push(classMatch[1])
   }
-  return [...new Set(result)];
+
+  return [...new Set(result)]
 }
 
-async function main() {
-  const cssPath = process.env.TAILWIND_CSS_PATH;
-  const css = readFileSync(cssPath, 'utf-8');
-  const base = dirname(cssPath);
-  const ds = await __unstable__loadDesignSystem(css, { base });
+async function precomputeMain(): Promise<void> {
+  const tailwindNodePath = process.env.TAILWIND_NODE_PATH
+  const cssPath = process.env.TAILWIND_CSS_PATH
+  if (!tailwindNodePath || !cssPath) throw new Error('Missing Tailwind precompute environment')
 
-  const entries = ds.getClassList();
-  const classNames = entries.map(e => e[0]);
+  const { __unstable__loadDesignSystem } = require(tailwindNodePath)
+  const { readFileSync, writeFileSync } = require('fs')
+  const { dirname } = require('path')
 
-  const batchSize = Math.max(1, Number(process.env.TAILWIND_PRECOMPUTE_BATCH_SIZE) || 512);
-  const classNameSet = new Set(classNames);
-  const validClasses = [];
-  const validSet = new Set();
-  const cssProps = {};
-  const componentClasses = extractComponentClasses(cssPath, base);
-  const arbitraryEquivalents = {};
+  const css = readFileSync(cssPath, 'utf-8')
+  const base = dirname(cssPath)
+  const ds = await __unstable__loadDesignSystem(css, { base })
 
-  function forEachCandidateCss(candidates, callback) {
+  const entries = ds.getClassList()
+  const classNames = entries.map((entry: [string]) => entry[0])
+  const classNameSet = new Set(classNames)
+  const batchSize = Math.max(1, Number(process.env.TAILWIND_PRECOMPUTE_BATCH_SIZE) || 512)
+  const validClasses: string[] = []
+  const validSet = new Set<string>()
+  const componentClasses = extractComponentClasses(cssPath, base)
+  const arbitraryEquivalents: Record<string, string> = {}
+
+  function forEachCandidateCss(
+    candidates: string[],
+    callback: (candidate: string, cssText: string | null) => void,
+  ): void {
     for (let start = 0; start < candidates.length; start += batchSize) {
-      const chunk = candidates.slice(start, start + batchSize);
-      const results = ds.candidatesToCss(chunk);
-      for (let i = 0; i < chunk.length; i++) callback(chunk[i], results[i]);
+      const chunk = candidates.slice(start, start + batchSize)
+      const results = ds.candidatesToCss(chunk)
+      for (let i = 0; i < chunk.length; i++) callback(chunk[i], results[i])
     }
   }
 
-  function extractDeclarations(css) {
-    const openBrace = css.indexOf('{');
-    const closeBrace = css.lastIndexOf('}');
-    if (openBrace === -1 || closeBrace === -1) return css;
-    return css.slice(openBrace + 1, closeBrace).replace(/\\s+/g, ' ').trim();
+  function extractDeclarations(cssText: string): string {
+    const openBrace = cssText.indexOf('{')
+    const closeBrace = cssText.lastIndexOf('}')
+    if (openBrace === -1 || closeBrace === -1) return cssText
+    return cssText
+      .slice(openBrace + 1, closeBrace)
+      .replace(/\s+/g, ' ')
+      .trim()
   }
 
-  const arbitraryForms = [];
-  const arbitraryNames = [];
-  const arbitraryDecls = [];
-  function flushArbitraryCandidates() {
-    if (arbitraryForms.length === 0) return;
-    const results = ds.candidatesToCss(arbitraryForms);
+  const arbitraryForms: string[] = []
+  const arbitraryNames: string[] = []
+  const arbitraryDecls: string[] = []
+  function flushArbitraryCandidates(): void {
+    if (arbitraryForms.length === 0) return
+
+    const results = ds.candidatesToCss(arbitraryForms)
     for (let i = 0; i < arbitraryForms.length; i++) {
-      if (!results[i]) continue;
+      if (!results[i]) continue
       if (extractDeclarations(results[i]) === arbitraryDecls[i]) {
-        arbitraryEquivalents[arbitraryForms[i]] = arbitraryNames[i];
-      }
-    }
-    arbitraryForms.length = 0;
-    arbitraryNames.length = 0;
-    arbitraryDecls.length = 0;
-  }
-
-  function queueArbitraryCandidate(arbitraryForm, namedCls, namedDecl) {
-    arbitraryForms.push(arbitraryForm);
-    arbitraryNames.push(namedCls);
-    arbitraryDecls.push(namedDecl);
-    if (arbitraryForms.length >= batchSize) flushArbitraryCandidates();
-  }
-
-  // Arbitrary equivalents: map arbitrary forms to named equivalents.
-  // Enumerate every dash split point so multi-segment utilities (e.g.
-  // bg-card-foreground) emit candidates for every prefix; lastIndexOf
-  // alone drops the shorter prefix and misses multi-segment mappings.
-  function maybeQueueArbitraryEquivalents(cls, cssText) {
-    if (cls.includes('[') || cls.includes('/')) return;
-    const pvMatch = cssText.match(/^\\s+([\\w-]+)\\s*:\\s*(.+?)\\s*;?\\s*$/m);
-    if (!pvMatch) return;
-    const value = pvMatch[2].trim().replace(/;$/, '');
-    const namedDecl = extractDeclarations(cssText);
-    for (let dashPos = cls.indexOf('-'); dashPos > 0; dashPos = cls.indexOf('-', dashPos + 1)) {
-      const prefix = cls.slice(0, dashPos);
-      queueArbitraryCandidate(prefix + '-[' + value + ']', cls, namedDecl);
-    }
-  }
-
-  // CSS properties per class — extract only from the ROOT selector, not descendant selectors.
-  // Plugin classes like "prose" generate CSS for both the root element (.prose { color: ...; })
-  // and descendant selectors (:where(.prose pre) { overflow-x: auto; }).
-  // Only root-level properties should be used for conflict detection.
-  const atPropertyDescriptors = new Set(['syntax', 'inherits', 'initial-value']);
-
-  function extractRootCssProps(cssText, className) {
-    const rootProps = [];
-    const allProps = [];
-    // CSS-escape special chars in class name for selector matching
-    const escapedName = className.replace(/([^\\w-])/g, '\\\\$1');
-    const classSelector = '.' + escapedName;
-    const rawSelector = '.' + className;
-    const propRe = /^\\s+([\\w-]+)\\s*:/gm;
-
-    function isRoot(sel) {
-      for (const s of [classSelector, rawSelector]) {
-        if (sel === s) return true;
-        if (sel.length > s.length && sel.startsWith(s) && sel[s.length] === ':') return true;
-      }
-      return false;
-    }
-
-    // Extract only top-level declarations from a block body (skip nested blocks).
-    // For CSS nesting like .prose { color: ...; :where(a) { color: ...; } },
-    // only extracts "color" from the top level, not from the nested :where(a) block.
-    function extractTopLevelProps(body) {
-      const props = [];
-      let depth = 0;
-      let lineStart = 0;
-      for (let i = 0; i <= body.length; i++) {
-        if (i === body.length || body[i] === '\\n') {
-          if (depth === 0) {
-            const line = body.slice(lineStart, i);
-            const m = /^\\s+([\\w-]+)\\s*:/.exec(line);
-            if (m && !atPropertyDescriptors.has(m[1])) props.push(m[1]);
-          }
-          lineStart = i + 1;
-        } else if (body[i] === '{') {
-          depth++;
-        } else if (body[i] === '}') {
-          depth--;
-        }
-      }
-      return props;
-    }
-
-    function processText(text) {
-      let i = 0;
-      while (i < text.length) {
-        while (i < text.length && /\\s/.test(text[i])) i++;
-        if (i >= text.length) break;
-        const braceIdx = text.indexOf('{', i);
-        if (braceIdx === -1) break;
-        const selector = text.slice(i, braceIdx).trim();
-        let depth = 1, j = braceIdx + 1;
-        while (j < text.length && depth > 0) {
-          if (text[j] === '{') depth++;
-          if (text[j] === '}') depth--;
-          j++;
-        }
-        const body = text.slice(braceIdx + 1, j - 1);
-        if (selector.startsWith('@media') || selector.startsWith('@supports') || selector.startsWith('@layer')) {
-          processText(body);
-        } else if (!selector.startsWith('@')) {
-          propRe.lastIndex = 0;
-          let m;
-          while ((m = propRe.exec(body)) !== null) {
-            if (!atPropertyDescriptors.has(m[1])) allProps.push(m[1]);
-          }
-          if (isRoot(selector)) rootProps.push(...extractTopLevelProps(body));
-        }
-        i = j;
+        arbitraryEquivalents[arbitraryForms[i]] = arbitraryNames[i]
       }
     }
 
-    processText(cssText);
-    // Use root-only properties when found; fall back to all for classes with
-    // escaped selectors or single-block output where root matching may miss.
-    const result = rootProps.length > 0 ? rootProps : allProps;
-    return [...new Set(result)];
+    arbitraryForms.length = 0
+    arbitraryNames.length = 0
+    arbitraryDecls.length = 0
   }
 
-  const attrClassRe = /\\[class~="([^"]+)"\\]/g;
+  function queueArbitraryCandidate(
+    arbitraryForm: string,
+    namedClass: string,
+    namedDecl: string,
+  ): void {
+    arbitraryForms.push(arbitraryForm)
+    arbitraryNames.push(namedClass)
+    arbitraryDecls.push(namedDecl)
+    if (arbitraryForms.length >= batchSize) flushArbitraryCandidates()
+  }
+
+  function maybeQueueArbitraryEquivalents(className: string, cssText: string): void {
+    if (className.includes('[') || className.includes('/')) return
+
+    const propertyValueMatch = cssText.match(/^\s+([\w-]+)\s*:\s*(.+?)\s*;?\s*$/m)
+    if (!propertyValueMatch) return
+
+    const value = propertyValueMatch[2].trim().replace(/;$/, '')
+    const namedDecl = extractDeclarations(cssText)
+    for (
+      let dashPos = className.indexOf('-');
+      dashPos > 0;
+      dashPos = className.indexOf('-', dashPos + 1)
+    ) {
+      const prefix = className.slice(0, dashPos)
+      queueArbitraryCandidate(`${prefix}-[${value}]`, className, namedDecl)
+    }
+  }
+
+  // classes referenced by selectors like `[class~="not-prose"]` are valid modifiers.
+  const attrClassRe = /\[class~="([^"]+)"\]/g
   forEachCandidateCss(classNames, (className, cssText) => {
-    if (cssText == null) return;
-    validClasses.push(className);
-    validSet.add(className);
+    if (cssText == null) return
+    validClasses.push(className)
+    validSet.add(className)
 
-    const props = extractRootCssProps(cssText, className);
-    if (props.length > 0) cssProps[className] = props;
-
-    let acm;
-    attrClassRe.lastIndex = 0;
-    while ((acm = attrClassRe.exec(cssText)) !== null) {
-      componentClasses.push(acm[1]);
+    let attrMatch: RegExpExecArray | null
+    attrClassRe.lastIndex = 0
+    while ((attrMatch = attrClassRe.exec(cssText)) !== null) {
+      componentClasses.push(attrMatch[1])
     }
 
-    maybeQueueArbitraryEquivalents(className, cssText);
-  });
-  flushArbitraryCandidates();
+    maybeQueueArbitraryEquivalents(className, cssText)
+  })
+  flushArbitraryCandidates()
 
-  // Expand: validate extra candidates not in getClassList() but valid in v4
-  const knownPrefixes = new Set();
-  for (const cls of validClasses) {
-    const dash = cls.lastIndexOf('-');
-    if (dash > 0) knownPrefixes.add(cls.slice(0, dash));
+  const knownPrefixes = new Set<string>()
+  for (const className of validClasses) {
+    const dash = className.lastIndexOf('-')
+    if (dash > 0) knownPrefixes.add(className.slice(0, dash))
   }
-  const extraCandidates = [];
-  extraCandidates.push('@container-size');
-  extraCandidates.push('@container-size/main');
-  const breakpoints = ['sm', 'md', 'lg', 'xl', '2xl'];
+
+  // Tailwind v4 accepts some generated utilities that are not present in getClassList().
+  const extraCandidates = ['@container-size', '@container-size/main']
   for (const prefix of knownPrefixes) {
-    // Bare utilities: rounded, shadow, blur, etc.
-    if (!validSet.has(prefix)) extraCandidates.push(prefix);
-    // Screen breakpoint variants: max-w-screen-lg, etc.
-    for (const bp of breakpoints) {
-      const candidate = prefix + '-screen-' + bp;
-      if (!validSet.has(candidate)) extraCandidates.push(candidate);
+    if (!validSet.has(prefix)) extraCandidates.push(prefix)
+    for (const breakpoint of ['sm', 'md', 'lg', 'xl', '2xl']) {
+      const candidate = `${prefix}-screen-${breakpoint}`
+      if (!validSet.has(candidate)) extraCandidates.push(candidate)
     }
   }
+
   forEachCandidateCss(extraCandidates, (candidate, cssText) => {
-    if (cssText == null) return;
-    validClasses.push(candidate);
-    validSet.add(candidate);
-  });
+    if (cssText == null) return
+    validClasses.push(candidate)
+    validSet.add(candidate)
+  })
 
-  // Marker classes: group/peer don't produce CSS but enable group-hover:/peer-checked: variants
-  const allVariants = ds.getVariants();
-  for (const v of allVariants) {
-    if (v.name === 'group' || v.name.startsWith('group-')) {
-      validClasses.push('group'); validSet.add('group'); break;
+  // group/peer are marker classes: they do not emit CSS but enable variants.
+  const allVariants = ds.getVariants()
+  for (const variant of allVariants) {
+    if (variant.name === 'group' || variant.name.startsWith('group-')) {
+      validClasses.push('group')
+      validSet.add('group')
+      break
     }
   }
-  for (const v of allVariants) {
-    if (v.name === 'peer' || v.name.startsWith('peer-')) {
-      validClasses.push('peer'); validSet.add('peer'); break;
-    }
-  }
-
-  // Named groups/peers: group/name, peer/name — the /name part is user-defined
-  // These are validated by the variant system, not by candidatesToCss
-
-  // Canonical forms (only store diffs)
-  // NOTE: canonicalizeCandidates deduplicates, so we must call it one class at a time
-  const canonical = {};
-  for (const cls of classNames) {
-    const result = ds.canonicalizeCandidates([cls]);
-    if (result[0] && result[0] !== cls) {
-      canonical[cls] = result[0];
+  for (const variant of allVariants) {
+    if (variant.name === 'peer' || variant.name.startsWith('peer-')) {
+      validClasses.push('peer')
+      validSet.add('peer')
+      break
     }
   }
 
-  // Legacy v3 classes that produce valid CSS in v4 but are not enumerated by
-  // getClassList(). Tailwind's canonicalizeCandidates() still rewrites them to
-  // their v4 equivalent, so we feed them in explicitly. Without this pass,
-  // classes like \`break-words\` would be invisible to enforce-canonical
-  // (issue #16).
-  // - Fixed renames mirror the internal v3->v4 map in tailwindcss/canonicalize.
-  // - Pattern renames (start-* -> inset-s-*, end-* -> inset-e-*) are derived
-  //   from the inset-{s,e}-* utilities present in validClasses so we cover
-  //   every numeric/named value the design system exposes.
+  const canonical: Record<string, string> = {}
+  for (const className of classNames) {
+    const result = ds.canonicalizeCandidates([className])
+    if (result[0] && result[0] !== className) canonical[className] = result[0]
+  }
+
+  // Legacy v3 spellings still accepted by v4 but missing from getClassList().
   const legacyCandidates = [
     'order-none',
     'break-words',
     'overflow-ellipsis',
-    'flex-grow', 'flex-grow-0', 'flex-grow-1',
-    'flex-shrink', 'flex-shrink-0', 'flex-shrink-1',
-    'decoration-clone', 'decoration-slice',
-    'bg-gradient-to-t', 'bg-gradient-to-tr', 'bg-gradient-to-r', 'bg-gradient-to-br',
-    'bg-gradient-to-b', 'bg-gradient-to-bl', 'bg-gradient-to-l', 'bg-gradient-to-tl',
-  ];
-  for (const cls of validClasses) {
-    if (cls.startsWith('inset-s-')) legacyCandidates.push('start-' + cls.slice(8));
-    else if (cls.startsWith('-inset-s-')) legacyCandidates.push('-start-' + cls.slice(9));
-    else if (cls.startsWith('inset-e-')) legacyCandidates.push('end-' + cls.slice(8));
-    else if (cls.startsWith('-inset-e-')) legacyCandidates.push('-end-' + cls.slice(9));
+    'flex-grow',
+    'flex-grow-0',
+    'flex-grow-1',
+    'flex-shrink',
+    'flex-shrink-0',
+    'flex-shrink-1',
+    'decoration-clone',
+    'decoration-slice',
+    'bg-gradient-to-t',
+    'bg-gradient-to-tr',
+    'bg-gradient-to-r',
+    'bg-gradient-to-br',
+    'bg-gradient-to-b',
+    'bg-gradient-to-bl',
+    'bg-gradient-to-l',
+    'bg-gradient-to-tl',
+  ]
+  for (const className of validClasses) {
+    if (className.startsWith('inset-s-')) legacyCandidates.push(`start-${className.slice(8)}`)
+    else if (className.startsWith('-inset-s-'))
+      legacyCandidates.push(`-start-${className.slice(9)}`)
+    else if (className.startsWith('inset-e-')) legacyCandidates.push(`end-${className.slice(8)}`)
+    else if (className.startsWith('-inset-e-')) legacyCandidates.push(`-end-${className.slice(9)}`)
   }
-  const legacyToProcess = legacyCandidates.filter(cls => !validSet.has(cls));
+
+  const legacyToProcess = legacyCandidates.filter((className) => !validSet.has(className))
   if (legacyToProcess.length > 0) {
-    const legacyCssResults = ds.candidatesToCss(legacyToProcess);
+    const legacyCssResults = ds.candidatesToCss(legacyToProcess)
     for (let i = 0; i < legacyToProcess.length; i++) {
-      if (legacyCssResults[i] == null) continue;
-      const cls = legacyToProcess[i];
-      const result = ds.canonicalizeCandidates([cls]);
-      if (result[0] && result[0] !== cls) {
-        canonical[cls] = result[0];
-      }
-      // Mark as valid so no-unknown-classes doesn't flag legacy spellings.
-      validClasses.push(cls);
-      validSet.add(cls);
+      if (legacyCssResults[i] == null) continue
+
+      const className = legacyToProcess[i]
+      const result = ds.canonicalizeCandidates([className])
+      if (result[0] && result[0] !== className) canonical[className] = result[0]
+
+      validClasses.push(className)
+      validSet.add(className)
     }
   }
 
-  // Sort order — include extra candidates so bare utilities (rounded, blur, etc.) get order.
-  // This must be one call: Tailwind returns relative indices for the given candidate set.
-  const order = {};
-  const allForOrder = [...classNames];
-  for (const cls of validClasses) {
-    if (!classNameSet.has(cls)) allForOrder.push(cls);
+  // This must be one call because Tailwind returns relative order for the candidate set.
+  const order: Record<string, string> = {}
+  const allForOrder = [...classNames]
+  for (const className of validClasses) {
+    if (!classNameSet.has(className)) allForOrder.push(className)
   }
-  const orderResults = ds.getClassOrder(allForOrder);
-  for (const [name, val] of orderResults) {
-    if (val !== null) order[name] = val.toString();
+  const orderResults = ds.getClassOrder(allForOrder)
+  for (const [name, value] of orderResults) {
+    if (value !== null) order[name] = value.toString()
   }
 
-  // Variant ordering from the design system
-  const variantOrder = {};
-  const variants = ds.getVariants();
+  const variantOrder: Record<string, number> = {}
+  const variants = ds.getVariants()
   for (let i = 0; i < variants.length; i++) {
-    if (!variants[i].isArbitrary) {
-      variantOrder[variants[i].name] = i;
-    }
+    if (!variants[i].isArbitrary) variantOrder[variants[i].name] = i
   }
 
-  const result = JSON.stringify({ validClasses, canonical, order, cssProps, variantOrder, componentClasses: [...new Set(componentClasses)], arbitraryEquivalents });
+  const result = JSON.stringify({
+    validClasses,
+    canonical,
+    order,
+    variantOrder,
+    componentClasses: [...new Set(componentClasses)],
+    arbitraryEquivalents,
+  })
+
   if (process.env.TAILWIND_OUTPUT_PATH) {
-    writeFileSync(process.env.TAILWIND_OUTPUT_PATH, result);
+    writeFileSync(process.env.TAILWIND_OUTPUT_PATH, result)
   } else {
-    process.stdout.write(result);
+    process.stdout.write(result)
   }
 }
-main().catch(e => { process.stderr.write(e.message); process.exit(1); });
+
+const PRECOMPUTE_SCRIPT = `
+${resolveImport}
+${extractComponentClasses}
+${precomputeMain}
+precomputeMain().catch((error) => {
+  process.stderr.write(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+});
 `
 
 const CACHE_DIR = join(tmpdir(), 'oxlint-tailwindcss')
 
 // Bump this when precompute logic changes or Tailwind data changes invalidate disk cache
-const CACHE_VERSION = 18
+const CACHE_VERSION = 19
 
 /**
  * Two-level disk cache for monorepo deduplication:
  *
- * Level 1 — mtime index (.idx): maps path+mtime → content hash (fast-path, avoids reading CSS)
- * Level 2 — content cache (.json): maps content hash → precomputed data (shared across packages)
+ * Level 1: mtime index (.idx) maps path+mtime to content hash.
+ * Level 2: content cache (.json) maps content hash to precomputed data.
  *
  * In monorepos, multiple packages with identical CSS (e.g. `@import 'tailwindcss'`) at different
  * paths share a single content cache entry, avoiding redundant child process spawns.
@@ -479,7 +424,7 @@ function writeCacheFiles(
     writeFileAtomic(contentCachePath, data)
     writeFileAtomic(mtimeIndexPath, contentHash)
   } catch {
-    // Non-fatal — cache is optional
+    // Non-fatal: cache is optional.
   }
 }
 
@@ -491,7 +436,6 @@ export function loadDesignSystemSync(cssPath: string, timeout?: number): Precomp
     const mtime = statSync(resolvedPath).mtimeMs
     const mtimeIndexPath = getMtimeIndexPath(resolvedPath, mtime)
 
-    // Fast path: mtime index exists → read content hash → look up content cache
     if (existsSync(mtimeIndexPath)) {
       try {
         const contentHash = readFileSync(mtimeIndexPath, 'utf-8').trim()
@@ -499,36 +443,27 @@ export function loadDesignSystemSync(cssPath: string, timeout?: number): Precomp
         const cached = tryReadCache(contentCachePath)
         if (cached) return cached
       } catch {
-        // Index corrupted, fall through
+        // Index corrupted, fall through.
       }
     }
 
-    // Slow path: read CSS content, compute content hash
     const content = readFileSync(resolvedPath, 'utf-8')
     const contentHash = computeContentHash(content)
     const contentCachePath = getContentCachePath(contentHash)
 
-    // Check content cache — another package with identical CSS may have already computed this
     const cached = tryReadCache(contentCachePath)
     if (cached) {
-      // Content cache hit (monorepo deduplication) — just write the mtime index
+      // Content cache hit: only the path+mtime index needs refreshing.
       try {
         mkdirSync(CACHE_DIR, { recursive: true })
         writeFileAtomic(mtimeIndexPath, contentHash)
-      } catch {
-        // Non-fatal
-      }
+      } catch {}
       return cached
     }
 
-    // Resolve @tailwindcss/node from the plugin's own location and pass it to
-    // the child via env. Bare-specifier resolution from the child's cwd would
-    // fail under pnpm strict workspaces where the consumer's project root has
-    // no direct access to the plugin's transitive deps.
     const tailwindNodePath = require.resolve('@tailwindcss/node')
 
-    // Full computation: spawn child process. The child writes the large JSON
-    // payload to a temp file to avoid duplicating it in execFileSync stdout buffers.
+    // The child writes JSON to a temp file to avoid duplicating it in stdout buffers.
     mkdirSync(CACHE_DIR, { recursive: true })
     outputPath = uniqueTempPath('precompute')
     execFileSync(process.execPath, ['-e', PRECOMPUTE_SCRIPT], {
@@ -543,11 +478,11 @@ export function loadDesignSystemSync(cssPath: string, timeout?: number): Precomp
       },
       cwd: dirname(resolvedPath),
     })
+
     const output = readFileSync(outputPath, 'utf-8')
     unlinkSync(outputPath)
     outputPath = null
 
-    // Write both cache levels
     writeCacheFiles(contentCachePath, mtimeIndexPath, contentHash, output)
 
     return JSON.parse(output) as PrecomputedData
@@ -557,10 +492,9 @@ export function loadDesignSystemSync(cssPath: string, timeout?: number): Precomp
         rmSync(outputPath, { force: true })
       } catch {}
     }
-    const msg = error instanceof Error ? error.message : String(error)
-    // Surface the pnpm/npm hoisting failure mode with an actionable hint
-    // instead of a raw "Cannot find module '@tailwindcss/node'" stack.
-    if (msg.includes("Cannot find module '@tailwindcss/node'")) {
+
+    const message = error instanceof Error ? error.message : String(error)
+    if (message.includes("Cannot find module '@tailwindcss/node'")) {
       console.error(
         `[oxlint-tailwindcss] Could not resolve '@tailwindcss/node' for "${resolvedPath}". ` +
           `If you are using pnpm with strict hoisting, add '@tailwindcss/node' as a direct devDependency, ` +
@@ -570,12 +504,13 @@ export function loadDesignSystemSync(cssPath: string, timeout?: number): Precomp
     } else {
       console.error(
         `[oxlint-tailwindcss] Failed to load design system from "${resolvedPath}":`,
-        msg,
+        message,
       )
     }
+
     return null
   }
 }
 
-// validateCandidatesSync removed — runtime child process calls were too slow.
+// validateCandidatesSync removed: runtime child process calls were too slow.
 // Unknown classes are now handled via precomputed expansion + heuristics in cache.isValid().

@@ -3,6 +3,7 @@ import { createExtractorVisitors, type ClassLocation } from '../utils/extractors
 import { splitClasses } from '../utils/class-splitter'
 import { extractUtility, getVariantPrefix } from '../utils/class-parser'
 import { createLazyLoader } from '../design-system/loader'
+import { getCssPropertiesSync } from '../design-system/css-props-service'
 
 export const noConflictingClasses = defineRule({
   meta: {
@@ -30,7 +31,6 @@ export const noConflictingClasses = defineRule({
     function check(locations: ClassLocation[]) {
       const ds = getDS()
       if (!ds) return
-      const { cache } = ds
       for (const loc of locations) {
         const classes = splitClasses(loc.value)
         if (classes.length < 2) continue
@@ -48,14 +48,22 @@ export const noConflictingClasses = defineRule({
           if (variantClasses.length < 2) continue
 
           // For each pair of classes in the same variant, compare CSS properties
-          const propsMap = new Map<string, string[]>()
+          const utilityByClass = new Map<string, string>()
+          const propsByClass = new Map<string, string[]>()
+          const utilities: string[] = []
           for (const cls of variantClasses) {
             let utility = extractUtility(cls)
             // Strip ! (important) for lookup — prefix or suffix
             if (utility.startsWith('!')) utility = utility.slice(1)
             else if (utility.endsWith('!')) utility = utility.slice(0, -1)
-            const props = cache.getCssProperties(utility)
-            propsMap.set(cls, props)
+            utilityByClass.set(cls, utility)
+            utilities.push(utility)
+          }
+          const cssProps = getCssPropertiesSync(ds.entryPoint, utilities)
+          if (!cssProps) continue
+          for (const cls of variantClasses) {
+            const utility = utilityByClass.get(cls)
+            propsByClass.set(cls, utility ? (cssProps.get(utility) ?? []) : [])
           }
 
           // Utilities that share a CSS property but are designed to compose.
@@ -147,11 +155,11 @@ export const noConflictingClasses = defineRule({
           // Detect conflicts
           for (let i = 0; i < variantClasses.length; i++) {
             const classA = variantClasses[i]
-            const propsA = propsMap.get(classA) ?? []
+            const propsA = propsByClass.get(classA) ?? []
 
             for (let j = i + 1; j < variantClasses.length; j++) {
               const classB = variantClasses[j]
-              const propsB = propsMap.get(classB) ?? []
+              const propsB = propsByClass.get(classB) ?? []
 
               // Skip pairs that share CSS properties but target different elements/roles
               if (shouldSkipPair(classA, classB, propsA, propsB)) continue

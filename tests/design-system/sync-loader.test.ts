@@ -23,7 +23,6 @@ describe('loadDesignSystemSync', () => {
     expect(result.validClasses).toBeDefined()
     expect(result.canonical).toBeDefined()
     expect(result.order).toBeDefined()
-    expect(result.cssProps).toBeDefined()
     expect(result.variantOrder).toBeDefined()
     expect(result.componentClasses).toBeDefined()
     expect(result.arbitraryEquivalents).toBeDefined()
@@ -32,7 +31,6 @@ describe('loadDesignSystemSync', () => {
     expect(Array.isArray(result.validClasses)).toBe(true)
     expect(typeof result.canonical).toBe('object')
     expect(typeof result.order).toBe('object')
-    expect(typeof result.cssProps).toBe('object')
     expect(typeof result.variantOrder).toBe('object')
     expect(Array.isArray(result.componentClasses)).toBe(true)
     expect(typeof result.arbitraryEquivalents).toBe('object')
@@ -43,8 +41,12 @@ describe('loadDesignSystemSync', () => {
 
     expect(result.validClasses.length).toBeGreaterThan(1000)
     expect(Object.keys(result.order).length).toBeGreaterThan(1000)
-    expect(Object.keys(result.cssProps).length).toBeGreaterThan(100)
     expect(Object.keys(result.variantOrder).length).toBeGreaterThan(10)
+  })
+
+  it('omits eager cssProps from the precomputed payload', () => {
+    const result = loadDesignSystemSync(ENTRY_POINT)!
+    expect(result.cssProps).toBeUndefined()
   })
 
   it('accepts custom timeout', () => {

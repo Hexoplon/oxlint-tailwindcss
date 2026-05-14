@@ -4,6 +4,10 @@ import {
   canonicalizeClassesSync,
   resetCanonicalizeService,
 } from '../../src/design-system/canonicalize-service'
+import {
+  getCssPropertiesSync,
+  resetCssPropsService,
+} from '../../src/design-system/css-props-service'
 
 const DEFAULT_CSS = resolve(__dirname, '../fixtures/default.css')
 const ALT_CSS = resolve(__dirname, '../fixtures/with-typography.css')
@@ -98,5 +102,30 @@ describe('canonicalize-service cache', () => {
     const warmAgain = canonicalizeClassesSync(DEFAULT_CSS, warm, 16)!
     expect(result![0]).toBe(warmAgain[1]) // 'flex'
     expect(result![2]).toBe(warmAgain[0]) // 'p-[16px]'
+  })
+})
+
+describe('css-props-service cache', () => {
+  beforeAll(() => {
+    resetCssPropsService()
+  })
+
+  afterAll(() => {
+    resetCssPropsService()
+  })
+
+  it('returns CSS properties for requested classes', () => {
+    const props = getCssPropertiesSync(DEFAULT_CSS, ['p-4', 'flex'])
+    expect(props).not.toBeNull()
+    if (!props) throw new Error('Expected CSS properties')
+    expect(props.get('p-4')).toContain('padding')
+    expect(props.get('flex')).toContain('display')
+  })
+
+  it('returns an empty property list for unknown classes', () => {
+    const props = getCssPropertiesSync(DEFAULT_CSS, ['not-a-tailwind-class'])
+    expect(props).not.toBeNull()
+    if (!props) throw new Error('Expected CSS properties')
+    expect(props.get('not-a-tailwind-class')).toEqual([])
   })
 })

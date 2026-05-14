@@ -8,6 +8,7 @@
  */
 
 import { Worker } from 'node:worker_threads'
+import { extractRootCssProps } from './css-props'
 
 const BUFFER_SIZE = 4 * 1024 * 1024 // 4 MB
 const HEADER_INTS = 4
@@ -17,6 +18,8 @@ const REQUEST_TIMEOUT = 10_000
 
 const WORKER_SCRIPT = `
 const { workerData } = require('worker_threads');
+
+${extractRootCssProps}
 
 async function main() {
   const { sharedBuffer, cssPath } = workerData;
@@ -70,6 +73,14 @@ async function main() {
           const r = ds.canonicalizeCandidates([cls], options);
           return r[0] ?? cls;
         });
+      } else if (request.type === 'cssProps') {
+        const cssResults = ds.candidatesToCss(request.classes);
+        result = {};
+        for (let i = 0; i < request.classes.length; i++) {
+          const cssText = cssResults[i];
+          if (!cssText) continue;
+          result[request.classes[i]] = extractRootCssProps(cssText, request.classes[i]);
+        }
       } else {
         result = null;
       }
@@ -100,7 +111,12 @@ interface CanonicalizeRequest {
   rem?: number
 }
 
-type RuntimeRequest = SortRequest | CanonicalizeRequest
+interface CssPropsRequest {
+  type: 'cssProps'
+  classes: string[]
+}
+
+type RuntimeRequest = SortRequest | CanonicalizeRequest | CssPropsRequest
 
 let worker: Worker | null = null
 let controlArray: Int32Array | null = null
@@ -114,6 +130,10 @@ let currentCssPath: string | null = null
 // Key: `${cssPath}\0${rem}\0${className}` — isolates monorepos (multiple DSs)
 // and different rem settings. Value: canonicalized class string.
 const canonCache = new Map<string, string>()
+
+// Process-wide cache of lazily computed CSS properties.
+// Key: `${cssPath}\0${className}` — isolates monorepos (multiple DSs).
+const cssPropsCache = new Map<string, string[]>()
 
 function ensureService(cssPath: string): boolean {
   if (initialized && currentCssPath === cssPath) return available
@@ -289,6 +309,47 @@ export function canonicalizeClassesSync(
 }
 
 /**
+ * Compute CSS properties for the requested utilities through the Tailwind CSS
+ * design system. Returns a map for all requested classes, or null if the
+ * service is unavailable.
+ */
+export function getCssPropertiesSync(
+  cssPath: string,
+  classes: string[],
+): Map<string, string[]> | null {
+  const out = new Map<string, string[]>()
+  const missing: string[] = []
+  const cachePrefix = `${cssPath}\0`
+
+  for (const className of classes) {
+    const key = cachePrefix + className
+    const hit = cssPropsCache.get(key)
+    if (hit !== undefined) {
+      out.set(className, hit)
+    } else {
+      missing.push(className)
+    }
+  }
+
+  if (missing.length === 0) return out
+
+  const uniqueMissing = [...new Set(missing)]
+  const fresh = callWorker<Record<string, string[]>>(cssPath, {
+    type: 'cssProps',
+    classes: uniqueMissing,
+  })
+  if (!fresh) return null
+
+  for (const className of uniqueMissing) {
+    const value = fresh[className] ?? []
+    cssPropsCache.set(cachePrefix + className, value)
+    out.set(className, value)
+  }
+
+  return out
+}
+
+/**
  * Reset the shared runtime worker (for sort-service tests).
  */
 export function resetSortRuntimeService(): void {
@@ -301,4 +362,12 @@ export function resetSortRuntimeService(): void {
 export function resetCanonicalizeRuntimeService(): void {
   resetRuntimeWorker()
   canonCache.clear()
+}
+
+/**
+ * Reset the shared runtime worker and CSS property cache (for tests).
+ */
+export function resetCssPropsRuntimeService(): void {
+  resetRuntimeWorker()
+  cssPropsCache.clear()
 }

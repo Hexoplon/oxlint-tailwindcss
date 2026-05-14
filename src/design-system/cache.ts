@@ -38,8 +38,10 @@ export class DesignSystemCache {
       if (order > cache._maxOrder) cache._maxOrder = order
     }
 
-    for (const [cls, props] of Object.entries(data.cssProps)) {
-      cache.cssPropsMap.set(cls, props)
+    if (data.cssProps) {
+      for (const [cls, props] of Object.entries(data.cssProps)) {
+        cache.cssPropsMap.set(cls, props)
+      }
     }
 
     if (data.variantOrder) {

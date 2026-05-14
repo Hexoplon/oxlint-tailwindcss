@@ -5,6 +5,7 @@ import { noConflictingClasses } from '../../src/rules/no-conflicting-classes'
 import { getLoadedDesignSystem, resetDesignSystem } from '../../src/design-system/loader'
 import { loadDesignSystemSync } from '../../src/design-system/sync-loader'
 import { DesignSystemCache } from '../../src/design-system/cache'
+import { getCssPropertiesSync } from '../../src/design-system/css-props-service'
 
 const ENTRY_POINT = resolve(__dirname, '../fixtures/default.css')
 const PROSE_ENTRY = resolve(__dirname, '../fixtures/with-typography.css')
@@ -230,8 +231,10 @@ describe('descendant selector filtering', () => {
   test('prose root properties should NOT include descendant selector properties', () => {
     const data = loadDesignSystemSync(PROSE_ENTRY)
     expect(data).not.toBeNull()
-    const cache = DesignSystemCache.fromPrecomputed(data!)
-    const proseProps = cache.getCssProperties('prose')
+    const props = getCssPropertiesSync(PROSE_ENTRY, ['prose'])
+    expect(props).not.toBeNull()
+    if (!props) throw new Error('Expected CSS properties')
+    const proseProps = props.get('prose') ?? []
     // prose root element sets: color, max-width
     // It should NOT include overflow-x (from :where(pre)),
     // font-weight (from :where(h1/a/code)), text-decoration (from :where(a)), etc.
