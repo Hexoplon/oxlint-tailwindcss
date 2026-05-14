@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 0.8.0-rc.3 (2026-05-14)
+## 0.8.0-rc.4 (2026-05-14)
 
 - **Tailwind CSS v4.3 support** — Updated Tailwind dependencies and compatibility for v4.3, including canonicalization and logical/physical rule coverage for newly generated class forms.
 - **Improve `no-conflicting-classes` accuracy** — Added support for same-prefix complementary-group conflicts, narrowing override composition, mask gradient composition, composite-mode composition, and animate plugin class composition from `tailwindcss-animate` and `tw-animate-css`.
