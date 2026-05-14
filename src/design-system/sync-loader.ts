@@ -353,7 +353,10 @@ async function main() {
     }
   }
 
-  // Arbitrary equivalents: map arbitrary forms to named equivalents
+  // Arbitrary equivalents: map arbitrary forms to named equivalents.
+  // Enumerate every dash split point so multi-segment utilities (e.g.
+  // bg-card-foreground) emit candidates for every prefix; lastIndexOf
+  // alone drops the shorter prefix and misses multi-segment mappings.
   const arbitraryEquivalents = {};
   const candidates = [];
   for (const cls of validClasses) {
@@ -365,10 +368,10 @@ async function main() {
     const pvMatch = cssText.match(/^\\s+([\\w-]+)\\s*:\\s*(.+?)\\s*;?\\s*$/m);
     if (!pvMatch) continue;
     const value = pvMatch[2].trim().replace(/;$/, '');
-    const lastDash = cls.lastIndexOf('-');
-    if (lastDash <= 0) continue;
-    const prefix = cls.slice(0, lastDash);
-    candidates.push({ arbitraryForm: prefix + '-[' + value + ']', namedCls: cls, namedCss: cssText });
+    for (let dashPos = cls.indexOf('-'); dashPos > 0; dashPos = cls.indexOf('-', dashPos + 1)) {
+      const prefix = cls.slice(0, dashPos);
+      candidates.push({ arbitraryForm: prefix + '-[' + value + ']', namedCls: cls, namedCss: cssText });
+    }
   }
   function extractDeclarations(css) {
     const openBrace = css.indexOf('{');
@@ -395,7 +398,7 @@ main().catch(e => { process.stderr.write(e.message); process.exit(1); });
 const CACHE_DIR = join(tmpdir(), 'oxlint-tailwindcss')
 
 // Bump this when precompute logic changes to invalidate disk cache
-const CACHE_VERSION = 13
+const CACHE_VERSION = 14
 
 /**
  * Two-level disk cache for monorepo deduplication:
