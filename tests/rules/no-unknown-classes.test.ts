@@ -63,6 +63,8 @@ ruleTester.run('no-unknown-classes', noUnknownClasses, {
       code: '<div className="zoom-75 zoom-(--preview-zoom) tab-4 tab-[12px]" />',
       filename: 'test.tsx',
     },
+    // react-data-grid built-in classes are not Tailwind utilities.
+    { code: '<div className="rdg rdg-cell rdg-row flex" />', filename: 'test.tsx' },
   ],
   invalid: [
     {

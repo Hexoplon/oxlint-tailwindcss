@@ -1,6 +1,7 @@
 import { defineRule } from '@oxlint/plugins'
 import { createExtractorVisitors, type ClassLocation } from '../utils/extractors'
 import { splitClasses } from '../utils/class-splitter'
+import { isKnownNonTailwindClass } from '../utils/non-tailwind-classes'
 import { safeOptions } from '../types'
 
 interface Options {
@@ -43,7 +44,7 @@ export const maxClassCount = defineRule({
     function check(locations: ClassLocation[]) {
       const max = getMax()
       for (const loc of locations) {
-        const classes = splitClasses(loc.value)
+        const classes = splitClasses(loc.value).filter((cls) => !isKnownNonTailwindClass(cls))
         if (classes.length > max) {
           context.report({
             node: loc.node,

@@ -1,6 +1,7 @@
 import { defineRule } from '@oxlint/plugins'
 import { createExtractorVisitors, preserveSpaces, type ClassLocation } from '../utils/extractors'
 import { rebuildClassString, splitClassesWithSeparators } from '../utils/class-splitter'
+import { isKnownNonTailwindClass } from '../utils/non-tailwind-classes'
 
 export const noDuplicateClasses = defineRule({
   meta: {
@@ -23,6 +24,7 @@ export const noDuplicateClasses = defineRule({
         const duplicates: string[] = []
 
         for (const cls of classes) {
+          if (isKnownNonTailwindClass(cls)) continue
           if (seen.has(cls)) {
             duplicates.push(cls)
           } else {
@@ -31,7 +33,10 @@ export const noDuplicateClasses = defineRule({
         }
 
         if (duplicates.length > 0) {
-          const unique = [...new Set(classes)]
+          const unique = classes.filter((cls, index) => {
+            if (isKnownNonTailwindClass(cls)) return true
+            return classes.indexOf(cls) === index
+          })
           const fixed = rebuildClassString(split, unique)
 
           for (const dup of duplicates) {

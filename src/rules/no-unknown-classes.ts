@@ -2,6 +2,7 @@ import { defineRule } from '@oxlint/plugins'
 import { createExtractorVisitors, preserveSpaces, type ClassLocation } from '../utils/extractors'
 import { rebuildClassString, splitClassesWithSeparators } from '../utils/class-splitter'
 import { findBestSuggestion } from '../utils/levenshtein'
+import { isKnownNonTailwindClass } from '../utils/non-tailwind-classes'
 import { createLazyLoader } from '../design-system/loader'
 import { safeOptions } from '../types'
 import { DEPRECATED_MAP } from './no-deprecated-classes'
@@ -57,6 +58,7 @@ export const noUnknownClasses = defineRule({
 
     function shouldIgnore(className: string): boolean {
       const { allowlist, ignorePrefixes } = getLazyOptions()
+      if (isKnownNonTailwindClass(className)) return true
       if (allowlist.has(className)) return true
       return ignorePrefixes.some((prefix) => className.startsWith(prefix))
     }

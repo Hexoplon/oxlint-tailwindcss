@@ -2,6 +2,7 @@ import { defineRule } from '@oxlint/plugins'
 import { createExtractorVisitors, preserveSpaces, type ClassLocation } from '../utils/extractors'
 import { rebuildClassString, splitClassesWithSeparators } from '../utils/class-splitter'
 import { splitUtilityAndVariant } from '../utils/class-parser'
+import { isKnownNonTailwindClass } from '../utils/non-tailwind-classes'
 import { createLazyLoader } from '../design-system/loader'
 import { sortClassesSync } from '../design-system/sort-service'
 import { warnOnce } from '../design-system/debug'
@@ -110,12 +111,25 @@ export const enforceSortOrder = defineRule({
         }
         return result
       }
+      function sortKeepingNonTailwind(classes: string[]): string[] {
+        const tailwindClasses = classes.filter((cls) => !isKnownNonTailwindClass(cls))
+        if (tailwindClasses.length < 2) return classes
+
+        const sortedTailwind =
+          mode === 'strict' ? sortStrict(tailwindClasses) : sortDefault(tailwindClasses)
+        let next = 0
+        return classes.map((cls) => {
+          if (isKnownNonTailwindClass(cls)) return cls
+          return sortedTailwind[next++]
+        })
+      }
+
       for (const loc of locations) {
         const split = splitClassesWithSeparators(loc.value)
         const classes = split.classes
         if (classes.length < 2) continue
 
-        const sortedNames = mode === 'strict' ? sortStrict(classes) : sortDefault(classes)
+        const sortedNames = sortKeepingNonTailwind(classes)
 
         const isSorted = classes.every((name, i) => name === sortedNames[i])
         if (isSorted) continue

@@ -308,6 +308,7 @@ const classes = condition ? "bg-blue-500" : "bg-gray-200"
 #### `no-unknown-classes`
 
 Reports classes not recognized by Tailwind CSS. Includes typo suggestions.
+Built-in `react-data-grid` classes (`rdg`, `rdg-*`) are ignored automatically.
 
 ```tsx
 // ❌ Bad

@@ -33,6 +33,7 @@ ruleTester.run('no-duplicate-classes', noDuplicateClasses, {
     { code: 'const foo = "flex flex"', filename: 'test.tsx' },
     // Variable: valid classes
     { code: 'const className = "flex items-center"', filename: 'test.tsx' },
+    { code: '<div className="rdg-cell rdg-cell flex" />', filename: 'test.tsx' },
   ],
   invalid: [
     {

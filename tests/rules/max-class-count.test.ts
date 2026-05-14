@@ -9,6 +9,11 @@ ruleTester.run('max-class-count', maxClassCount, {
     { code: '<div className="flex items-center" />', filename: 'test.tsx' },
     { code: '<div className="p-4 m-2 text-red-500" />', filename: 'test.tsx' },
     { code: 'cn("flex", "items-center p-4")', filename: 'test.tsx' },
+    {
+      code: '<div className="rdg rdg-cell flex items-center" />',
+      filename: 'test.tsx',
+      options: [{ max: 2 }],
+    },
     // Exactly 20 classes (at the limit)
     {
       code: '<div className="flex items-center p-4 m-2 bg-white text-black rounded shadow border w-full h-10 gap-2 justify-between font-bold text-sm overflow-hidden cursor-pointer transition duration-200" />',

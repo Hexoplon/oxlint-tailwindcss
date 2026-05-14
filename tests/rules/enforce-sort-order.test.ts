@@ -33,6 +33,10 @@ ruleTester.run('enforce-sort-order', enforceSortOrder, {
       filename: 'test.tsx',
     },
     { code: '<div className="flex" />', filename: 'test.tsx' },
+    {
+      code: '<div className="rdg rdg-cell" />',
+      filename: 'test.tsx',
+    },
   ],
   invalid: [
     {
@@ -105,6 +109,12 @@ ruleTester.run('enforce-sort-order', enforceSortOrder, {
       filename: 'test.tsx',
       errors: [{ messageId: 'unsorted' }],
       output: '<div className="grid hover:grid [@supports(display:grid)]:grid" />',
+    },
+    {
+      code: '<div className="text-red-500 rdg-cell flex" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'unsorted' }],
+      output: '<div className="flex rdg-cell text-red-500" />',
     },
   ],
 })
