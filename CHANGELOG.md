@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.8.7 (2026-05-14)
+
+- **Fix `ENOMEM` from `spawnSync` on cold caches in CI** — `loadDesignSystemSync` now precomputes the design system inside a `worker_threads.Worker` instead of spawning a child `node` process via `execFileSync`. The previous v0.8.6 file-lock serialized the spawn, but a single `fork()`/`posix_spawn()` of the oxlint parent (which holds ~216 GB of V8 virtual address-space reservations) was already enough to exceed the kernel commit charge on small CI runners (e.g. GitHub Actions `ubuntu-latest`), producing `[oxlint-tailwindcss] Failed to load design system: spawnSync … ENOMEM`. Worker threads share the parent's address space, so they require no fork-time commit. `execFileSync` is retained as a fallback for environments where Worker creation fails.
+- Measured on a real-world Next.js monorepo (cold `pnpm lint`, 885 files, 211 rules): peak RSS unchanged (~1.8 GB), but the precompute child process is eliminated entirely (process count 5 → 4). Wall-clock unchanged (~18 s cold, ~15 s warm). The change unblocks CI on hosts with strict overcommit (`vm.overcommit_memory=2`) or low `CommitLimit`.
+- 1122 tests.
+
 ## 0.8.6 (2026-05-14)
 
 - **Fix `ENOMEM` from `spawnSync` on cold caches in CI / monorepos** — `loadDesignSystemSync` now serializes the precompute child-process spawn with a sync file lock keyed on the content cache hash. Without it, every oxlint worker thread (and every parallel turbo task sharing the same CSS) raced to fork its own `node` child, which exhausted memory on small CI runners and produced repeated `[oxlint-tailwindcss] Failed to load design system: spawnSync ... ENOMEM` errors. Workers that lose the race now wait (`Atomics.wait` on a private `SharedArrayBuffer`, ~50 ms ticks), re-check the on-disk content cache, and read the JSON the winner just wrote. Stale locks (older than 2× the precompute timeout) are forcibly broken so a crashed peer can't wedge the cache; lock-acquisition failure falls back to spawning anyway, so the rule path can never deadlock.

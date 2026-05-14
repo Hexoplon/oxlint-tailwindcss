@@ -1,15 +1,24 @@
 /**
- * Synchronous design system loader using execFileSync.
+ * Synchronous design system loader.
  *
  * The problem: __unstable__loadDesignSystem is async, but oxlint's createOnce is sync.
- * The solution: spawn a child process that loads the design system, pre-computes all
- * data we need, and writes it as JSON. This runs ONCE per unique CSS entry point.
+ * The solution: run a worker_threads Worker that loads the design system and pre-computes
+ * all data we need, then signal completion via SharedArrayBuffer + Atomics.wait. The
+ * worker writes its JSON output to a temp file (kept out of the SAB so the buffer can
+ * stay tiny). This runs ONCE per unique CSS entry point.
+ *
+ * Worker threads are used in preference to spawning a child node process: forking on
+ * small CI runners can fail with ENOMEM because posix_spawn must commit memory equal
+ * to the parent's address space. Worker threads share the address space and need no
+ * such commitment. We fall back to execFileSync only if the worker fails to start
+ * (extremely rare; e.g. environments where Worker is unavailable).
  *
  * For arbitrary values (bg-[#123]) that aren't in the class list, we use heuristics.
  */
 
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { Worker } from 'node:worker_threads'
 import {
   closeSync,
   existsSync,
@@ -359,9 +368,10 @@ async function precomputeMain(): Promise<void> {
 // The ESM build of this package is bundled by tsdown, which rewrites every
 // `require(...)` call to `__require(...)` (a `createRequire` shim defined at
 // the top of the bundle). The functions interpolated below are stringified
-// from this module, so their `require` calls also become `__require`. The
-// child `node -e` process has no such shim, so we alias it to the native
-// `require` here. Same shim is used in `runtime-service.ts` for the worker.
+// from this module, so their `require` calls also become `__require`. Both
+// the worker_threads Worker and the `node -e` fallback child process have no
+// such shim, so we alias it to the native `require` here. Same shim is used
+// in `runtime-service.ts`.
 const PRECOMPUTE_SCRIPT = `
 var __require = require;
 ${resolveImport}
@@ -370,6 +380,30 @@ ${precomputeMain}
 precomputeMain().catch((error) => {
   process.stderr.write(error instanceof Error ? error.message : String(error));
   process.exit(1);
+});
+`
+
+// Worker variant: same precompute logic, but signals completion via Atomics
+// instead of process exit. The output path comes from workerData.
+const PRECOMPUTE_WORKER_SCRIPT = `
+var __require = require;
+const { workerData } = require('worker_threads');
+process.env.TAILWIND_CSS_PATH = workerData.cssPath;
+process.env.TAILWIND_NODE_PATH = workerData.tailwindNodePath;
+process.env.TAILWIND_OUTPUT_PATH = workerData.outputPath;
+${resolveImport}
+${extractComponentClasses}
+${precomputeMain}
+const __control = new Int32Array(workerData.sharedBuffer);
+precomputeMain().then(() => {
+  Atomics.store(__control, 0, 1);
+  Atomics.notify(__control, 0);
+}).catch((error) => {
+  try {
+    process.stderr.write(error instanceof Error ? error.message : String(error));
+  } catch {}
+  Atomics.store(__control, 0, -1);
+  Atomics.notify(__control, 0);
 });
 `
 
@@ -494,6 +528,52 @@ function releaseLockSync(fd: number, lockPath: string): void {
   } catch {}
 }
 
+/**
+ * Run the precompute script in a worker thread. Worker threads share the
+ * parent's address space, so they don't trigger the fork-based ENOMEM that
+ * `execFileSync` hits on small CI runners (the OS must commit memory equal
+ * to the parent process for posix_spawn).
+ *
+ * Returns true on success (output written to outputPath), false on failure
+ * (caller should fall back to execFileSync).
+ */
+function runPrecomputeInWorker(
+  cssPath: string,
+  tailwindNodePath: string,
+  outputPath: string,
+  timeoutMs: number,
+): boolean {
+  const sharedBuffer = new SharedArrayBuffer(4)
+  const control = new Int32Array(sharedBuffer)
+
+  let worker: Worker
+  try {
+    worker = new Worker(PRECOMPUTE_WORKER_SCRIPT, {
+      eval: true,
+      workerData: { cssPath, tailwindNodePath, outputPath, sharedBuffer },
+      // Inherit stderr so worker errors surface in the parent's logs.
+    })
+  } catch {
+    return false
+  }
+
+  worker.on('error', () => {
+    Atomics.store(control, 0, -1)
+    Atomics.notify(control, 0)
+  })
+
+  const result = Atomics.wait(control, 0, 0, timeoutMs)
+  const status = control[0]
+
+  try {
+    worker.terminate()
+  } catch {}
+
+  if (result === 'timed-out' || status !== 1) return false
+
+  return true
+}
+
 export function loadDesignSystemSync(cssPath: string, timeout?: number): PrecomputedData | null {
   const resolvedPath = resolve(cssPath)
   let outputPath: string | null = null
@@ -553,18 +633,30 @@ export function loadDesignSystemSync(cssPath: string, timeout?: number): Precomp
 
     try {
       outputPath = uniqueTempPath('precompute')
-      execFileSync(process.execPath, ['-e', PRECOMPUTE_SCRIPT], {
-        encoding: 'utf-8',
-        timeout: spawnTimeout,
-        maxBuffer: 1024 * 1024,
-        env: {
-          ...process.env,
-          TAILWIND_CSS_PATH: resolvedPath,
-          TAILWIND_NODE_PATH: tailwindNodePath,
-          TAILWIND_OUTPUT_PATH: outputPath,
-        },
-        cwd: dirname(resolvedPath),
-      })
+
+      // Prefer worker_threads (zero fork overhead). Fall back to a child node
+      // process if the worker can't be created (very rare).
+      const workerOk = runPrecomputeInWorker(
+        resolvedPath,
+        tailwindNodePath,
+        outputPath,
+        spawnTimeout,
+      )
+
+      if (!workerOk) {
+        execFileSync(process.execPath, ['-e', PRECOMPUTE_SCRIPT], {
+          encoding: 'utf-8',
+          timeout: spawnTimeout,
+          maxBuffer: 1024 * 1024,
+          env: {
+            ...process.env,
+            TAILWIND_CSS_PATH: resolvedPath,
+            TAILWIND_NODE_PATH: tailwindNodePath,
+            TAILWIND_OUTPUT_PATH: outputPath,
+          },
+          cwd: dirname(resolvedPath),
+        })
+      }
 
       const output = readFileSync(outputPath, 'utf-8')
       unlinkSync(outputPath)
