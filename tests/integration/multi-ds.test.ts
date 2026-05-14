@@ -22,23 +22,30 @@ const TEMP_DIR = join(PROJECT_ROOT, '.bench-tmp', 'multi-ds')
 // pkg-api uses custom-theme.css → has color-brand, spacing-18 custom values
 const PKG_WEB_CSS = join(FIXTURES, 'with-components.css')
 const PKG_API_CSS = join(FIXTURES, 'custom-theme.css')
+const SHARED_CSS = join(TEMP_DIR, 'workspace', 'design-system', 'src', 'styles.css')
+const APP_FILE = join(TEMP_DIR, 'apps', 'web', 'src', 'components', 'Example.tsx')
 
 beforeAll(() => {
   // Create simulated monorepo structure
   mkdirSync(join(TEMP_DIR, 'pkg-web', 'src'), { recursive: true })
   mkdirSync(join(TEMP_DIR, 'pkg-api', 'src'), { recursive: true })
+  mkdirSync(join(TEMP_DIR, 'workspace', 'design-system', 'src'), { recursive: true })
+  mkdirSync(join(TEMP_DIR, 'apps', 'web', 'src', 'components'), { recursive: true })
 
   // Each package has its own package.json (auto-detect boundary)
   writeFileSync(join(TEMP_DIR, 'pkg-web', 'package.json'), '{}')
   writeFileSync(join(TEMP_DIR, 'pkg-api', 'package.json'), '{}')
+  writeFileSync(join(TEMP_DIR, '.oxlintrc.json'), '{}')
 
   // Each package has its own CSS entry point
   copyFileSync(PKG_WEB_CSS, join(TEMP_DIR, 'pkg-web', 'src', 'globals.css'))
   copyFileSync(PKG_API_CSS, join(TEMP_DIR, 'pkg-api', 'src', 'globals.css'))
+  copyFileSync(PKG_WEB_CSS, SHARED_CSS)
 
   // Dummy source files (for auto-detect to resolve from)
   writeFileSync(join(TEMP_DIR, 'pkg-web', 'src', 'App.tsx'), '')
   writeFileSync(join(TEMP_DIR, 'pkg-api', 'src', 'Schema.tsx'), '')
+  writeFileSync(APP_FILE, '')
 })
 
 afterAll(() => {
@@ -178,6 +185,58 @@ describe('Multi-DS: package without CSS should not inherit another package DS (#
 
 describe('Multi-DS: entryPoint array via settings', () => {
   beforeEach(() => resetDesignSystem())
+
+  it('resolves relative settings entry point consistently across cwd changes', () => {
+    const originalCwd = process.cwd()
+    const settings = {
+      tailwindcss: { entryPoint: 'workspace/design-system/src/styles.css' },
+    }
+    const cwdValues = [
+      TEMP_DIR,
+      join(TEMP_DIR, 'apps', 'web'),
+      join(TEMP_DIR, 'workspace', 'design-system'),
+    ]
+
+    try {
+      for (const cwd of cwdValues) {
+        process.chdir(cwd)
+        resetDesignSystem()
+
+        const result = getLoadedDesignSystem(undefined, settings, APP_FILE)
+
+        expect(result).not.toBeNull()
+        expect(result!.entryPoint).toBe(SHARED_CSS)
+        expect(result!.cache.isValid('btn')).toBe(true)
+      }
+    } finally {
+      process.chdir(originalCwd)
+    }
+  })
+
+  it('does not resolve fixed settings entry point from the linted file directory', () => {
+    const originalCwd = process.cwd()
+    const collidingCss = join(TEMP_DIR, 'apps', 'web', 'workspace', 'design-system', 'src')
+    mkdirSync(collidingCss, { recursive: true })
+    copyFileSync(PKG_API_CSS, join(collidingCss, 'styles.css'))
+
+    try {
+      process.chdir(join(TEMP_DIR, 'apps', 'web'))
+      resetDesignSystem()
+
+      const result = getLoadedDesignSystem(
+        undefined,
+        { tailwindcss: { entryPoint: 'workspace/design-system/src/styles.css' } },
+        APP_FILE,
+      )
+
+      expect(result).not.toBeNull()
+      expect(result!.entryPoint).toBe(SHARED_CSS)
+      expect(result!.cache.isValid('btn')).toBe(true)
+      expect(result!.cache.isValid('bg-brand')).toBe(false)
+    } finally {
+      process.chdir(originalCwd)
+    }
+  })
 
   it('resolves closest entry point from array for each file', () => {
     const webFile = join(TEMP_DIR, 'pkg-web', 'src', 'App.tsx')

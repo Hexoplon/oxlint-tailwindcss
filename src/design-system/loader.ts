@@ -2,8 +2,8 @@ import { DesignSystemCache } from './cache'
 import { loadDesignSystemSync } from './sync-loader'
 import { autoDetectEntryPoint } from './auto-detect'
 import { debugLog, isDebugEnabled, setDebugEnabled, resetDebug } from './debug'
-import { statSync } from 'node:fs'
-import { dirname, resolve, relative } from 'node:path'
+import { existsSync, statSync } from 'node:fs'
+import { dirname, isAbsolute, resolve, relative } from 'node:path'
 
 export interface LoadResult {
   cache: DesignSystemCache
@@ -15,6 +15,8 @@ const dsCache = new Map<string, { cache: DesignSystemCache; mtime: number }>()
 
 // Auto-detect result cache by directory — avoids repeated filesystem walks
 const autoDetectCache = new Map<string, string | null>()
+
+const OXLINT_CONFIG_FILES = ['.oxlintrc.json', '.oxlintrc.jsonc', 'oxlint.json', 'oxlint.jsonc']
 
 // Fallback path — only set by explicit entryPoint calls (tests, rule options),
 // never by auto-detect. Prevents cross-package contamination in monorepos.
@@ -50,7 +52,7 @@ function resolveClosestEntryPoint(entryPoints: string[], filePath?: string): str
   let bestLen = 0
 
   for (const ep of entryPoints) {
-    const epDir = dirname(resolve(ep))
+    const epDir = dirname(resolveEntryPointForComparison(ep, filePath))
     // Count shared path prefix length
     const len = commonPrefixLength(fileDir, epDir)
     if (len > bestLen) {
@@ -67,6 +69,49 @@ function commonPrefixLength(a: string, b: string): number {
   let i = 0
   while (i < len && a[i] === b[i]) i++
   return i
+}
+
+function findAncestorWithFile(start: string, fileNames: string[]): string | null {
+  let dir = resolve(start)
+
+  while (true) {
+    if (fileNames.some((fileName) => existsSync(resolve(dir, fileName)))) return dir
+
+    const parent = dirname(dir)
+    if (parent === dir) return null
+    dir = parent
+  }
+}
+
+function resolveEntryPointPath(entryPoint: string): string {
+  if (isAbsolute(entryPoint)) return entryPoint
+
+  const configDir = findAncestorWithFile(process.cwd(), OXLINT_CONFIG_FILES)
+  if (configDir) {
+    const candidate = resolve(configDir, entryPoint)
+    if (existsSync(candidate)) return candidate
+  }
+
+  return resolve(entryPoint)
+}
+
+function resolveEntryPointForComparison(entryPoint: string, filePath?: string): string {
+  const resolvedEntryPoint = resolveEntryPointPath(entryPoint)
+  if (existsSync(resolvedEntryPoint) || isAbsolute(entryPoint) || !filePath)
+    return resolvedEntryPoint
+
+  let dir = dirname(resolve(filePath))
+
+  while (true) {
+    const candidate = resolve(dir, entryPoint)
+    if (existsSync(candidate)) return candidate
+
+    const parent = dirname(dir)
+    if (parent === dir) break
+    dir = parent
+  }
+
+  return resolvedEntryPoint
 }
 
 /**
@@ -133,7 +178,7 @@ export function getLoadedDesignSystem(
   const cssPath = explicitEntry ?? cachedAutoDetect(filePath) ?? lastLoadedPath
   if (!cssPath) return null
 
-  const resolvedPath = resolve(cssPath)
+  const resolvedPath = resolveEntryPointPath(cssPath)
 
   try {
     const mtime = statSync(resolvedPath).mtimeMs

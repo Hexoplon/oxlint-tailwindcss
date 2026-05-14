@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 0.8.3 (2026-05-14)
+
+- **Fix relative `entryPoint` resolution across package cwd values** — `settings.tailwindcss.entryPoint` now resolves relative paths from the nearest oxlint config ancestor when available, so root hooks and package-level tasks load the same Tailwind design system. Fixed `entryPoint: string[]` proximity checks to use the same normalized paths while preserving auto-detection behavior.
+- 1118 tests (up from 1116).
+
 ## 0.8.2 (2026-05-14)
 
 - **Improve one-pass autofix convergence** — Class-transforming rules now preserve sorted class order when `enforce-sort-order` is also enabled, avoiding second-run sort errors after canonicalization, deprecation, unnecessary-arbitrary-value, or theme-token fixes.
