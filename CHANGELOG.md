@@ -5,7 +5,8 @@
 ## 0.8.1 (2026-05-14)
 
 - **Fix `react-data-grid` false positives** — Built-in `react-data-grid` classes (`rdg`, `rdg-*`) are now treated as known non-Tailwind classes. `no-unknown-classes` ignores them, `enforce-sort-order` preserves their positions while sorting adjacent Tailwind classes, and `no-duplicate-classes`/`max-class-count` do not count them as Tailwind utilities.
-- 1107 tests (up from 1103).
+- **Fix Sonner/shadcn false positives** — Sonner marker classes (`toast`, `toaster`) are now treated as known non-Tailwind classes so shadcn's `<Sonner className="toaster group" />` wrapper does not fail `no-unknown-classes`.
+- 1108 tests (up from 1103).
 
 ## 0.8.0 (2026-05-14)
 

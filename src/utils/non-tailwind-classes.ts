@@ -5,7 +5,7 @@
  */
 export function isKnownNonTailwindClass(className: string): boolean {
   const bare = stripImportant(className)
-  return bare === 'rdg' || bare.startsWith('rdg-')
+  return bare === 'rdg' || bare.startsWith('rdg-') || bare === 'toast' || bare === 'toaster'
 }
 
 function stripImportant(className: string): string {

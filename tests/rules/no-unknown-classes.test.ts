@@ -65,6 +65,8 @@ ruleTester.run('no-unknown-classes', noUnknownClasses, {
     },
     // react-data-grid built-in classes are not Tailwind utilities.
     { code: '<div className="rdg rdg-cell rdg-row flex" />', filename: 'test.tsx' },
+    // Sonner/shadcn marker classes are not Tailwind utilities.
+    { code: '<div className="toaster toast group" />', filename: 'test.tsx' },
   ],
   invalid: [
     {
