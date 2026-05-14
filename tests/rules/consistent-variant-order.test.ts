@@ -18,9 +18,9 @@ describe('consistent-variant-order (static fallback)', () => {
     valid: [
       { code: '<div className="flex items-center" />', filename: 'test.tsx' },
       { code: '<div className="hover:flex" />', filename: 'test.tsx' },
-      { code: '<div className="sm:hover:flex" />', filename: 'test.tsx' },
-      { code: '<div className="md:focus:bg-blue-500" />', filename: 'test.tsx' },
-      { code: '<div className="dark:hover:text-white" />', filename: 'test.tsx' },
+      { code: '<div className="hover:sm:flex" />', filename: 'test.tsx' },
+      { code: '<div className="focus:md:bg-blue-500" />', filename: 'test.tsx' },
+      { code: '<div className="hover:dark:text-white" />', filename: 'test.tsx' },
       // Child/descendant selectors with arbitrary variants must preserve order
       { code: '<div className="*:[a]:underline" />', filename: 'test.tsx' },
       { code: '<div className="**:[div]:flex" />', filename: 'test.tsx' },
@@ -43,36 +43,36 @@ describe('consistent-variant-order (static fallback)', () => {
     ],
     invalid: [
       {
-        code: '<div className="hover:sm:flex" />',
+        code: '<div className="sm:hover:flex" />',
         filename: 'test.tsx',
         errors: [{ messageId: 'wrongOrder' }],
-        output: '<div className="sm:hover:flex" />',
+        output: '<div className="hover:sm:flex" />',
       },
       {
-        code: '<div className="hover:dark:text-white" />',
+        code: '<div className="dark:hover:text-white" />',
         filename: 'test.tsx',
         errors: [{ messageId: 'wrongOrder' }],
-        output: '<div className="dark:hover:text-white" />',
+        output: '<div className="hover:dark:text-white" />',
       },
       {
-        code: '<div className="focus:md:bg-blue-500" />',
+        code: '<div className="md:focus:bg-blue-500" />',
         filename: 'test.tsx',
         errors: [{ messageId: 'wrongOrder' }],
-        output: '<div className="md:focus:bg-blue-500" />',
+        output: '<div className="focus:md:bg-blue-500" />',
       },
       // Template literal: preserve trailing space before expression
       {
-        code: '<div className={`hover:sm:flex ${x}`} />',
+        code: '<div className={`sm:hover:flex ${x}`} />',
         filename: 'test.tsx',
         errors: [{ messageId: 'wrongOrder' }],
-        output: '<div className={`sm:hover:flex ${x}`} />',
+        output: '<div className={`hover:sm:flex ${x}`} />',
       },
       // Template literal: preserve leading space after expression
       {
-        code: '<div className={`${base} hover:sm:flex`} />',
+        code: '<div className={`${base} sm:hover:flex`} />',
         filename: 'test.tsx',
         errors: [{ messageId: 'wrongOrder' }],
-        output: '<div className={`${base} sm:hover:flex`} />',
+        output: '<div className={`${base} hover:sm:flex`} />',
       },
       // Pseudo-element incorrectly before element-selecting variant (#12)
       {
@@ -107,7 +107,7 @@ describe('consistent-variant-order (static fallback)', () => {
       },
       // Multiple misordered variants in same string
       {
-        code: '<div className="hover:sm:flex focus:md:block" />',
+        code: '<div className="sm:hover:flex md:focus:block" />',
         filename: 'test.tsx',
         errors: [
           { messageId: 'wrongOrder' },
@@ -116,33 +116,33 @@ describe('consistent-variant-order (static fallback)', () => {
             suggestions: [
               {
                 messageId: 'suggestReplace',
-                data: { className: 'focus:md:block', replacement: 'md:focus:block' },
-                output: '<div className="sm:hover:flex md:focus:block" />',
+                data: { className: 'md:focus:block', replacement: 'focus:md:block' },
+                output: '<div className="hover:sm:flex focus:md:block" />',
               },
             ],
           },
         ],
-        output: '<div className="sm:hover:flex md:focus:block" />',
+        output: '<div className="hover:sm:flex focus:md:block" />',
       },
     ],
   })
 
-  // Custom order: hover before dark (reversed from default)
+  // Custom order: dark before hover (reversed from Tailwind v4 default)
   ruleTester.run('consistent-variant-order (custom order)', consistentVariantOrder, {
     valid: [
       {
-        code: '<div className="hover:dark:text-white" />',
+        code: '<div className="dark:hover:text-white" />',
         filename: 'test.tsx',
-        options: [{ order: ['hover', 'focus', 'dark'] }],
+        options: [{ order: ['dark', 'hover', 'focus'] }],
       },
     ],
     invalid: [
       {
-        code: '<div className="dark:hover:text-white" />',
+        code: '<div className="hover:dark:text-white" />',
         filename: 'test.tsx',
-        options: [{ order: ['hover', 'focus', 'dark'] }],
+        options: [{ order: ['dark', 'hover', 'focus'] }],
         errors: [{ messageId: 'wrongOrder' }],
-        output: '<div className="hover:dark:text-white" />',
+        output: '<div className="dark:hover:text-white" />',
       },
     ],
   })

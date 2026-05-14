@@ -3,14 +3,23 @@
  *
  * The problem: __unstable__loadDesignSystem is async, but oxlint's createOnce is sync.
  * The solution: spawn a child process that loads the design system, pre-computes all
- * data we need, and returns it as JSON via stdout. This runs ONCE at plugin init time.
+ * data we need, and writes it as JSON. This runs ONCE at plugin init time.
  *
  * For arbitrary values (bg-[#123]) that aren't in the class list, we use heuristics.
  */
 
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 
@@ -37,7 +46,7 @@ const PRECOMPUTE_SCRIPT = `
 // strict workspaces (the module lives under node_modules/.pnpm/... which
 // is not on the resolution path from the consumer's project root).
 const { __unstable__loadDesignSystem } = require(process.env.TAILWIND_NODE_PATH);
-const { readFileSync } = require('fs');
+const { readFileSync, writeFileSync } = require('fs');
 const { dirname, resolve } = require('path');
 
 function resolveImport(specifier, baseDir) {
@@ -122,127 +131,73 @@ async function main() {
   const entries = ds.getClassList();
   const classNames = entries.map(e => e[0]);
 
-  // Index for O(1) lookups by class name (avoids O(N) indexOf/includes in later phases)
-  const classNameIndex = new Map();
-  for (let i = 0; i < classNames.length; i++) classNameIndex.set(classNames[i], i);
+  const batchSize = Math.max(1, Number(process.env.TAILWIND_PRECOMPUTE_BATCH_SIZE) || 512);
+  const classNameSet = new Set(classNames);
+  const validClasses = [];
+  const validSet = new Set();
+  const cssProps = {};
+  const componentClasses = extractComponentClasses(cssPath, base);
+  const arbitraryEquivalents = {};
 
-  // Validity: which classes produce CSS
-  const cssResults = ds.candidatesToCss(classNames);
-  const validClasses = classNames.filter((_, i) => cssResults[i] != null);
-
-  // Expand: validate extra candidates not in getClassList() but valid in v4
-  const validSet = new Set(validClasses);
-  const knownPrefixes = new Set();
-  for (const cls of validClasses) {
-    const dash = cls.lastIndexOf('-');
-    if (dash > 0) knownPrefixes.add(cls.slice(0, dash));
-  }
-  const extraCandidates = [];
-  extraCandidates.push('@container-size');
-  extraCandidates.push('@container-size/main');
-  const breakpoints = ['sm', 'md', 'lg', 'xl', '2xl'];
-  for (const prefix of knownPrefixes) {
-    // Bare utilities: rounded, shadow, blur, etc.
-    if (!validSet.has(prefix)) extraCandidates.push(prefix);
-    // Screen breakpoint variants: max-w-screen-lg, etc.
-    for (const bp of breakpoints) {
-      const candidate = prefix + '-screen-' + bp;
-      if (!validSet.has(candidate)) extraCandidates.push(candidate);
+  function forEachCandidateCss(candidates, callback) {
+    for (let start = 0; start < candidates.length; start += batchSize) {
+      const chunk = candidates.slice(start, start + batchSize);
+      const results = ds.candidatesToCss(chunk);
+      for (let i = 0; i < chunk.length; i++) callback(chunk[i], results[i]);
     }
   }
-  if (extraCandidates.length > 0) {
-    const extraResults = ds.candidatesToCss(extraCandidates);
-    for (let i = 0; i < extraCandidates.length; i++) {
-      if (extraResults[i] != null) {
-        validClasses.push(extraCandidates[i]);
-        validSet.add(extraCandidates[i]);
+
+  function extractDeclarations(css) {
+    const openBrace = css.indexOf('{');
+    const closeBrace = css.lastIndexOf('}');
+    if (openBrace === -1 || closeBrace === -1) return css;
+    return css.slice(openBrace + 1, closeBrace).replace(/\\s+/g, ' ').trim();
+  }
+
+  const arbitraryForms = [];
+  const arbitraryNames = [];
+  const arbitraryDecls = [];
+  function flushArbitraryCandidates() {
+    if (arbitraryForms.length === 0) return;
+    const results = ds.candidatesToCss(arbitraryForms);
+    for (let i = 0; i < arbitraryForms.length; i++) {
+      if (!results[i]) continue;
+      if (extractDeclarations(results[i]) === arbitraryDecls[i]) {
+        arbitraryEquivalents[arbitraryForms[i]] = arbitraryNames[i];
       }
     }
+    arbitraryForms.length = 0;
+    arbitraryNames.length = 0;
+    arbitraryDecls.length = 0;
   }
 
-  // Marker classes: group/peer don't produce CSS but enable group-hover:/peer-checked: variants
-  const allVariants = ds.getVariants();
-  for (const v of allVariants) {
-    if (v.name === 'group' || v.name.startsWith('group-')) {
-      validClasses.push('group'); validSet.add('group'); break;
+  function queueArbitraryCandidate(arbitraryForm, namedCls, namedDecl) {
+    arbitraryForms.push(arbitraryForm);
+    arbitraryNames.push(namedCls);
+    arbitraryDecls.push(namedDecl);
+    if (arbitraryForms.length >= batchSize) flushArbitraryCandidates();
+  }
+
+  // Arbitrary equivalents: map arbitrary forms to named equivalents.
+  // Enumerate every dash split point so multi-segment utilities (e.g.
+  // bg-card-foreground) emit candidates for every prefix; lastIndexOf
+  // alone drops the shorter prefix and misses multi-segment mappings.
+  function maybeQueueArbitraryEquivalents(cls, cssText) {
+    if (cls.includes('[') || cls.includes('/')) return;
+    const pvMatch = cssText.match(/^\\s+([\\w-]+)\\s*:\\s*(.+?)\\s*;?\\s*$/m);
+    if (!pvMatch) return;
+    const value = pvMatch[2].trim().replace(/;$/, '');
+    const namedDecl = extractDeclarations(cssText);
+    for (let dashPos = cls.indexOf('-'); dashPos > 0; dashPos = cls.indexOf('-', dashPos + 1)) {
+      const prefix = cls.slice(0, dashPos);
+      queueArbitraryCandidate(prefix + '-[' + value + ']', cls, namedDecl);
     }
-  }
-  for (const v of allVariants) {
-    if (v.name === 'peer' || v.name.startsWith('peer-')) {
-      validClasses.push('peer'); validSet.add('peer'); break;
-    }
-  }
-
-  // Named groups/peers: group/name, peer/name — the /name part is user-defined
-  // These are validated by the variant system, not by candidatesToCss
-
-  // Canonical forms (only store diffs)
-  // NOTE: canonicalizeCandidates deduplicates, so we must call it one class at a time
-  const canonical = {};
-  for (const cls of classNames) {
-    const result = ds.canonicalizeCandidates([cls]);
-    if (result[0] && result[0] !== cls) {
-      canonical[cls] = result[0];
-    }
-  }
-
-  // Legacy v3 classes that produce valid CSS in v4 but are not enumerated by
-  // getClassList(). Tailwind's canonicalizeCandidates() still rewrites them to
-  // their v4 equivalent, so we feed them in explicitly. Without this pass,
-  // classes like \`break-words\` would be invisible to enforce-canonical
-  // (issue #16).
-  // - Fixed renames mirror the internal v3->v4 map in tailwindcss/canonicalize.
-  // - Pattern renames (start-* -> inset-s-*, end-* -> inset-e-*) are derived
-  //   from the inset-{s,e}-* utilities present in validClasses so we cover
-  //   every numeric/named value the design system exposes.
-  const legacyCandidates = [
-    'order-none',
-    'break-words',
-    'overflow-ellipsis',
-    'flex-grow', 'flex-grow-0', 'flex-grow-1',
-    'flex-shrink', 'flex-shrink-0', 'flex-shrink-1',
-    'decoration-clone', 'decoration-slice',
-    'bg-gradient-to-t', 'bg-gradient-to-tr', 'bg-gradient-to-r', 'bg-gradient-to-br',
-    'bg-gradient-to-b', 'bg-gradient-to-bl', 'bg-gradient-to-l', 'bg-gradient-to-tl',
-  ];
-  for (const cls of validClasses) {
-    if (cls.startsWith('inset-s-')) legacyCandidates.push('start-' + cls.slice(8));
-    else if (cls.startsWith('-inset-s-')) legacyCandidates.push('-start-' + cls.slice(9));
-    else if (cls.startsWith('inset-e-')) legacyCandidates.push('end-' + cls.slice(8));
-    else if (cls.startsWith('-inset-e-')) legacyCandidates.push('-end-' + cls.slice(9));
-  }
-  const legacyToProcess = legacyCandidates.filter(cls => !validSet.has(cls));
-  if (legacyToProcess.length > 0) {
-    const legacyCssResults = ds.candidatesToCss(legacyToProcess);
-    for (let i = 0; i < legacyToProcess.length; i++) {
-      if (legacyCssResults[i] == null) continue;
-      const cls = legacyToProcess[i];
-      const result = ds.canonicalizeCandidates([cls]);
-      if (result[0] && result[0] !== cls) {
-        canonical[cls] = result[0];
-      }
-      // Mark as valid so no-unknown-classes doesn't flag legacy spellings.
-      validClasses.push(cls);
-      validSet.add(cls);
-    }
-  }
-
-  // Sort order — include extra candidates so bare utilities (rounded, blur, etc.) get order
-  const allForOrder = [...classNames];
-  for (const cls of validClasses) {
-    if (!classNameIndex.has(cls)) allForOrder.push(cls);
-  }
-  const order = {};
-  const orderResults = ds.getClassOrder(allForOrder);
-  for (const [name, val] of orderResults) {
-    if (val !== null) order[name] = val.toString();
   }
 
   // CSS properties per class — extract only from the ROOT selector, not descendant selectors.
   // Plugin classes like "prose" generate CSS for both the root element (.prose { color: ...; })
   // and descendant selectors (:where(.prose pre) { overflow-x: auto; }).
   // Only root-level properties should be used for conflict detection.
-  const cssProps = {};
   const atPropertyDescriptors = new Set(['syntax', 'inherits', 'initial-value']);
 
   function extractRootCssProps(cssText, className) {
@@ -322,11 +277,127 @@ async function main() {
     return [...new Set(result)];
   }
 
-  for (let i = 0; i < classNames.length; i++) {
-    if (cssResults[i]) {
-      const props = extractRootCssProps(cssResults[i], classNames[i]);
-      if (props.length > 0) cssProps[classNames[i]] = props;
+  const attrClassRe = /\\[class~="([^"]+)"\\]/g;
+  forEachCandidateCss(classNames, (className, cssText) => {
+    if (cssText == null) return;
+    validClasses.push(className);
+    validSet.add(className);
+
+    const props = extractRootCssProps(cssText, className);
+    if (props.length > 0) cssProps[className] = props;
+
+    let acm;
+    attrClassRe.lastIndex = 0;
+    while ((acm = attrClassRe.exec(cssText)) !== null) {
+      componentClasses.push(acm[1]);
     }
+
+    maybeQueueArbitraryEquivalents(className, cssText);
+  });
+  flushArbitraryCandidates();
+
+  // Expand: validate extra candidates not in getClassList() but valid in v4
+  const knownPrefixes = new Set();
+  for (const cls of validClasses) {
+    const dash = cls.lastIndexOf('-');
+    if (dash > 0) knownPrefixes.add(cls.slice(0, dash));
+  }
+  const extraCandidates = [];
+  extraCandidates.push('@container-size');
+  extraCandidates.push('@container-size/main');
+  const breakpoints = ['sm', 'md', 'lg', 'xl', '2xl'];
+  for (const prefix of knownPrefixes) {
+    // Bare utilities: rounded, shadow, blur, etc.
+    if (!validSet.has(prefix)) extraCandidates.push(prefix);
+    // Screen breakpoint variants: max-w-screen-lg, etc.
+    for (const bp of breakpoints) {
+      const candidate = prefix + '-screen-' + bp;
+      if (!validSet.has(candidate)) extraCandidates.push(candidate);
+    }
+  }
+  forEachCandidateCss(extraCandidates, (candidate, cssText) => {
+    if (cssText == null) return;
+    validClasses.push(candidate);
+    validSet.add(candidate);
+  });
+
+  // Marker classes: group/peer don't produce CSS but enable group-hover:/peer-checked: variants
+  const allVariants = ds.getVariants();
+  for (const v of allVariants) {
+    if (v.name === 'group' || v.name.startsWith('group-')) {
+      validClasses.push('group'); validSet.add('group'); break;
+    }
+  }
+  for (const v of allVariants) {
+    if (v.name === 'peer' || v.name.startsWith('peer-')) {
+      validClasses.push('peer'); validSet.add('peer'); break;
+    }
+  }
+
+  // Named groups/peers: group/name, peer/name — the /name part is user-defined
+  // These are validated by the variant system, not by candidatesToCss
+
+  // Canonical forms (only store diffs)
+  // NOTE: canonicalizeCandidates deduplicates, so we must call it one class at a time
+  const canonical = {};
+  for (const cls of classNames) {
+    const result = ds.canonicalizeCandidates([cls]);
+    if (result[0] && result[0] !== cls) {
+      canonical[cls] = result[0];
+    }
+  }
+
+  // Legacy v3 classes that produce valid CSS in v4 but are not enumerated by
+  // getClassList(). Tailwind's canonicalizeCandidates() still rewrites them to
+  // their v4 equivalent, so we feed them in explicitly. Without this pass,
+  // classes like \`break-words\` would be invisible to enforce-canonical
+  // (issue #16).
+  // - Fixed renames mirror the internal v3->v4 map in tailwindcss/canonicalize.
+  // - Pattern renames (start-* -> inset-s-*, end-* -> inset-e-*) are derived
+  //   from the inset-{s,e}-* utilities present in validClasses so we cover
+  //   every numeric/named value the design system exposes.
+  const legacyCandidates = [
+    'order-none',
+    'break-words',
+    'overflow-ellipsis',
+    'flex-grow', 'flex-grow-0', 'flex-grow-1',
+    'flex-shrink', 'flex-shrink-0', 'flex-shrink-1',
+    'decoration-clone', 'decoration-slice',
+    'bg-gradient-to-t', 'bg-gradient-to-tr', 'bg-gradient-to-r', 'bg-gradient-to-br',
+    'bg-gradient-to-b', 'bg-gradient-to-bl', 'bg-gradient-to-l', 'bg-gradient-to-tl',
+  ];
+  for (const cls of validClasses) {
+    if (cls.startsWith('inset-s-')) legacyCandidates.push('start-' + cls.slice(8));
+    else if (cls.startsWith('-inset-s-')) legacyCandidates.push('-start-' + cls.slice(9));
+    else if (cls.startsWith('inset-e-')) legacyCandidates.push('end-' + cls.slice(8));
+    else if (cls.startsWith('-inset-e-')) legacyCandidates.push('-end-' + cls.slice(9));
+  }
+  const legacyToProcess = legacyCandidates.filter(cls => !validSet.has(cls));
+  if (legacyToProcess.length > 0) {
+    const legacyCssResults = ds.candidatesToCss(legacyToProcess);
+    for (let i = 0; i < legacyToProcess.length; i++) {
+      if (legacyCssResults[i] == null) continue;
+      const cls = legacyToProcess[i];
+      const result = ds.canonicalizeCandidates([cls]);
+      if (result[0] && result[0] !== cls) {
+        canonical[cls] = result[0];
+      }
+      // Mark as valid so no-unknown-classes doesn't flag legacy spellings.
+      validClasses.push(cls);
+      validSet.add(cls);
+    }
+  }
+
+  // Sort order — include extra candidates so bare utilities (rounded, blur, etc.) get order.
+  // This must be one call: Tailwind returns relative indices for the given candidate set.
+  const order = {};
+  const allForOrder = [...classNames];
+  for (const cls of validClasses) {
+    if (!classNameSet.has(cls)) allForOrder.push(cls);
+  }
+  const orderResults = ds.getClassOrder(allForOrder);
+  for (const [name, val] of orderResults) {
+    if (val !== null) order[name] = val.toString();
   }
 
   // Variant ordering from the design system
@@ -338,61 +409,12 @@ async function main() {
     }
   }
 
-  // Component classes from @layer components
-  const componentClasses = extractComponentClasses(cssPath, base);
-
-  // Extract class names from attribute selectors [class~="..."] in CSS output.
-  // Plugins like @tailwindcss/typography use these for modifier classes (e.g. "not-prose")
-  // that don't generate their own CSS but are referenced in other classes' selectors.
-  const attrClassRe = /\\[class~="([^"]+)"\\]/g;
-  for (let i = 0; i < cssResults.length; i++) {
-    if (cssResults[i]) {
-      let acm;
-      attrClassRe.lastIndex = 0;
-      while ((acm = attrClassRe.exec(cssResults[i])) !== null) {
-        componentClasses.push(acm[1]);
-      }
-    }
+  const result = JSON.stringify({ validClasses, canonical, order, cssProps, variantOrder, componentClasses: [...new Set(componentClasses)], arbitraryEquivalents });
+  if (process.env.TAILWIND_OUTPUT_PATH) {
+    writeFileSync(process.env.TAILWIND_OUTPUT_PATH, result);
+  } else {
+    process.stdout.write(result);
   }
-
-  // Arbitrary equivalents: map arbitrary forms to named equivalents.
-  // Enumerate every dash split point so multi-segment utilities (e.g.
-  // bg-card-foreground) emit candidates for every prefix; lastIndexOf
-  // alone drops the shorter prefix and misses multi-segment mappings.
-  const arbitraryEquivalents = {};
-  const candidates = [];
-  for (const cls of validClasses) {
-    if (cls.includes('[') || cls.includes('/')) continue;
-    const idx = classNameIndex.get(cls);
-    if (idx === undefined) continue;
-    const cssText = cssResults[idx];
-    if (!cssText) continue;
-    const pvMatch = cssText.match(/^\\s+([\\w-]+)\\s*:\\s*(.+?)\\s*;?\\s*$/m);
-    if (!pvMatch) continue;
-    const value = pvMatch[2].trim().replace(/;$/, '');
-    for (let dashPos = cls.indexOf('-'); dashPos > 0; dashPos = cls.indexOf('-', dashPos + 1)) {
-      const prefix = cls.slice(0, dashPos);
-      candidates.push({ arbitraryForm: prefix + '-[' + value + ']', namedCls: cls, namedCss: cssText });
-    }
-  }
-  function extractDeclarations(css) {
-    const openBrace = css.indexOf('{');
-    const closeBrace = css.lastIndexOf('}');
-    if (openBrace === -1 || closeBrace === -1) return css;
-    return css.slice(openBrace + 1, closeBrace).replace(/\\s+/g, ' ').trim();
-  }
-  if (candidates.length > 0) {
-    const arbForms = candidates.map(c => c.arbitraryForm);
-    const arbResults = ds.candidatesToCss(arbForms);
-    for (let i = 0; i < candidates.length; i++) {
-      if (!arbResults[i]) continue;
-      if (extractDeclarations(arbResults[i]) === extractDeclarations(candidates[i].namedCss)) {
-        arbitraryEquivalents[candidates[i].arbitraryForm] = candidates[i].namedCls;
-      }
-    }
-  }
-
-  process.stdout.write(JSON.stringify({ validClasses, canonical, order, cssProps, variantOrder, componentClasses, arbitraryEquivalents }));
 }
 main().catch(e => { process.stderr.write(e.message); process.exit(1); });
 `
@@ -400,7 +422,7 @@ main().catch(e => { process.stderr.write(e.message); process.exit(1); });
 const CACHE_DIR = join(tmpdir(), 'oxlint-tailwindcss')
 
 // Bump this when precompute logic changes or Tailwind data changes invalidate disk cache
-const CACHE_VERSION = 16
+const CACHE_VERSION = 18
 
 /**
  * Two-level disk cache for monorepo deduplication:
@@ -433,6 +455,19 @@ function tryReadCache(cachePath: string): PrecomputedData | null {
   }
 }
 
+function uniqueTempPath(prefix: string): string {
+  const hash = createHash('md5')
+    .update(`${process.pid}:${Date.now()}:${Math.random()}`)
+    .digest('hex')
+  return join(CACHE_DIR, `${prefix}-${hash}.tmp`)
+}
+
+function writeFileAtomic(path: string, data: string): void {
+  const tempPath = uniqueTempPath('write')
+  writeFileSync(tempPath, data)
+  renameSync(tempPath, path)
+}
+
 function writeCacheFiles(
   contentCachePath: string,
   mtimeIndexPath: string,
@@ -441,8 +476,8 @@ function writeCacheFiles(
 ): void {
   try {
     mkdirSync(CACHE_DIR, { recursive: true })
-    writeFileSync(contentCachePath, data)
-    writeFileSync(mtimeIndexPath, contentHash)
+    writeFileAtomic(contentCachePath, data)
+    writeFileAtomic(mtimeIndexPath, contentHash)
   } catch {
     // Non-fatal — cache is optional
   }
@@ -450,6 +485,7 @@ function writeCacheFiles(
 
 export function loadDesignSystemSync(cssPath: string, timeout?: number): PrecomputedData | null {
   const resolvedPath = resolve(cssPath)
+  let outputPath: string | null = null
 
   try {
     const mtime = statSync(resolvedPath).mtimeMs
@@ -478,7 +514,7 @@ export function loadDesignSystemSync(cssPath: string, timeout?: number): Precomp
       // Content cache hit (monorepo deduplication) — just write the mtime index
       try {
         mkdirSync(CACHE_DIR, { recursive: true })
-        writeFileSync(mtimeIndexPath, contentHash)
+        writeFileAtomic(mtimeIndexPath, contentHash)
       } catch {
         // Non-fatal
       }
@@ -491,24 +527,36 @@ export function loadDesignSystemSync(cssPath: string, timeout?: number): Precomp
     // no direct access to the plugin's transitive deps.
     const tailwindNodePath = require.resolve('@tailwindcss/node')
 
-    // Full computation: spawn child process
-    const stdout = execFileSync(process.execPath, ['-e', PRECOMPUTE_SCRIPT], {
+    // Full computation: spawn child process. The child writes the large JSON
+    // payload to a temp file to avoid duplicating it in execFileSync stdout buffers.
+    mkdirSync(CACHE_DIR, { recursive: true })
+    outputPath = uniqueTempPath('precompute')
+    execFileSync(process.execPath, ['-e', PRECOMPUTE_SCRIPT], {
       encoding: 'utf-8',
       timeout: timeout ?? 30_000,
-      maxBuffer: 50 * 1024 * 1024,
+      maxBuffer: 1024 * 1024,
       env: {
         ...process.env,
         TAILWIND_CSS_PATH: resolvedPath,
         TAILWIND_NODE_PATH: tailwindNodePath,
+        TAILWIND_OUTPUT_PATH: outputPath,
       },
       cwd: dirname(resolvedPath),
     })
+    const output = readFileSync(outputPath, 'utf-8')
+    unlinkSync(outputPath)
+    outputPath = null
 
     // Write both cache levels
-    writeCacheFiles(contentCachePath, mtimeIndexPath, contentHash, stdout)
+    writeCacheFiles(contentCachePath, mtimeIndexPath, contentHash, output)
 
-    return JSON.parse(stdout) as PrecomputedData
+    return JSON.parse(output) as PrecomputedData
   } catch (error) {
+    if (outputPath) {
+      try {
+        rmSync(outputPath, { force: true })
+      } catch {}
+    }
     const msg = error instanceof Error ? error.message : String(error)
     // Surface the pnpm/npm hoisting failure mode with an actionable hint
     // instead of a raw "Cannot find module '@tailwindcss/node'" stack.
