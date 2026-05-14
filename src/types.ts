@@ -30,10 +30,6 @@ export interface PluginSettings {
   exclude?: ExtractorExclusions
 }
 
-export interface RuleOptions {
-  entryPoint?: string
-}
-
 /**
  * Safely read context.options.
  *
@@ -64,19 +60,6 @@ export function safeSettings(context: {
 }): Readonly<Record<string, unknown>> | undefined {
   try {
     return context.settings ?? undefined
-  } catch {
-    return undefined
-  }
-}
-
-/**
- * Safely read context.filename.
- *
- * Like `safeSettings`, `context.filename` may not be accessible in `createOnce()`.
- */
-export function safeFilename(context: { filename?: string }): string | undefined {
-  try {
-    return context.filename ?? undefined
   } catch {
     return undefined
   }

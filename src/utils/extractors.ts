@@ -21,7 +21,7 @@ export function preserveSpaces(loc: ClassLocation, fixed: string): string {
   return fixed
 }
 
-export interface ExtractorConfig {
+interface ExtractorConfig {
   attributes: string[]
   callees: string[]
   tags: string[]
@@ -30,7 +30,7 @@ export interface ExtractorConfig {
 
 const DEFAULT_VARIABLE_PATTERNS = [/^classNames?$/, /^classes$/, /^styles?$/]
 
-export const DEFAULT_EXTRACTOR_CONFIG: ExtractorConfig = {
+const DEFAULT_EXTRACTOR_CONFIG: ExtractorConfig = {
   attributes: ['className', 'class'],
   callees: [
     'cn',
@@ -74,7 +74,7 @@ function mergeUnique(defaults: string[], extras?: string[], exclusions?: string[
  * `settings.tailwindcss`. Caches after the first successful settings read.
  * Falls back to DEFAULT_EXTRACTOR_CONFIG if settings are unavailable.
  */
-export function getExtractorConfig(context: {
+function getExtractorConfig(context: {
   settings?: Readonly<Record<string, unknown>>
 }): ExtractorConfig {
   if (_settingsResolved) return _cachedConfig!
@@ -162,7 +162,7 @@ export function createExtractorVisitors(
  * Extracts class locations from a JSXAttribute node.
  * Handles: className="...", className={`...`}, className={cond ? "..." : "..."}
  */
-export function extractFromJSXAttribute(
+function extractFromJSXAttribute(
   node: ESTree.JSXAttribute,
   config: ExtractorConfig = DEFAULT_EXTRACTOR_CONFIG,
 ): ClassLocation[] {
@@ -199,7 +199,7 @@ export function extractFromJSXAttribute(
  * Extracts class locations from a CallExpression (cn, clsx, cva, tv, etc).
  * For cva() and tv(), uses dedicated extractors that understand their config structure.
  */
-export function extractFromCallExpression(
+function extractFromCallExpression(
   node: ESTree.CallExpression,
   config: ExtractorConfig = DEFAULT_EXTRACTOR_CONFIG,
 ): ClassLocation[] {
@@ -220,7 +220,7 @@ export function extractFromCallExpression(
 /**
  * Extracts class locations from a TaggedTemplateExpression (tw`...`).
  */
-export function extractFromTaggedTemplate(
+function extractFromTaggedTemplate(
   node: ESTree.TaggedTemplateExpression,
   config: ExtractorConfig = DEFAULT_EXTRACTOR_CONFIG,
 ): ClassLocation[] {
@@ -433,7 +433,7 @@ function getPropertyName(key: ESTree.Node): string | undefined {
  * Extracts class locations from a VariableDeclarator whose name matches variablePatterns.
  * e.g. const className = "flex items-center"
  */
-export function extractFromVariableDeclarator(
+function extractFromVariableDeclarator(
   node: ESTree.VariableDeclarator,
   config: ExtractorConfig = DEFAULT_EXTRACTOR_CONFIG,
 ): ClassLocation[] {
