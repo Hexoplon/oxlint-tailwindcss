@@ -6,6 +6,10 @@ import { createLazyLoader, rootFontSizeFromSettings } from '../design-system/loa
 import { canonicalizeClassesSync } from '../design-system/canonicalize-service'
 import { safeSettings } from '../types'
 
+function needsRuntimeCanonicalization(cls: string): boolean {
+  return utilityHasDynamicValue(cls) || cls.includes('[') || cls.includes('(')
+}
+
 /**
  * Preserve the user's ! position after canonicalization.
  * canonicalizeCandidates always normalizes ! to suffix, but
@@ -90,7 +94,7 @@ export const enforceCanonical = defineRule({
         const arbitrary: string[] = []
 
         for (let i = 0; i < classes.length; i++) {
-          if (utilityHasDynamicValue(classes[i])) {
+          if (needsRuntimeCanonicalization(classes[i])) {
             arbitraryIdx.push(i)
             arbitrary.push(classes[i])
           } else {

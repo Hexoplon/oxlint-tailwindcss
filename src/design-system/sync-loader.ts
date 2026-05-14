@@ -138,6 +138,8 @@ async function main() {
     if (dash > 0) knownPrefixes.add(cls.slice(0, dash));
   }
   const extraCandidates = [];
+  extraCandidates.push('@container-size');
+  extraCandidates.push('@container-size/main');
   const breakpoints = ['sm', 'md', 'lg', 'xl', '2xl'];
   for (const prefix of knownPrefixes) {
     // Bare utilities: rounded, shadow, blur, etc.
@@ -397,8 +399,8 @@ main().catch(e => { process.stderr.write(e.message); process.exit(1); });
 
 const CACHE_DIR = join(tmpdir(), 'oxlint-tailwindcss')
 
-// Bump this when precompute logic changes to invalidate disk cache
-const CACHE_VERSION = 14
+// Bump this when precompute logic changes or Tailwind data changes invalidate disk cache
+const CACHE_VERSION = 16
 
 /**
  * Two-level disk cache for monorepo deduplication:

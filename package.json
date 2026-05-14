@@ -54,8 +54,8 @@
     "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
-    "@tailwindcss/node": "^4.2.4",
-    "tailwindcss": "^4.2.4"
+    "@tailwindcss/node": "^4.3.0",
+    "tailwindcss": "^4.3.0"
   },
   "devDependencies": {
     "@oxlint/plugins": "^1.63.0",

@@ -28,6 +28,11 @@ ruleTester.run('no-deprecated-classes', noDeprecatedClasses, {
       filename: 'test.tsx',
       options: [{ entryPoint: ENTRY_POINT }],
     },
+    {
+      code: '<div className="inset-s-4 inset-e-full" />',
+      filename: 'test.tsx',
+      options: [{ entryPoint: ENTRY_POINT }],
+    },
   ],
   invalid: [
     // Generated from DEPRECATED_MAP — every entry is covered
@@ -89,6 +94,40 @@ ruleTester.run('no-deprecated-classes', noDeprecatedClasses, {
       options: [{ entryPoint: ENTRY_POINT }],
       errors: [{ messageId: 'deprecated' }],
       output: '<div className="!grow" />',
+    },
+    // v4.2: start-* / end-* are deprecated in favor of inset-s-* / inset-e-*
+    {
+      code: '<div className="start-4" />',
+      filename: 'test.tsx',
+      options: [{ entryPoint: ENTRY_POINT }],
+      errors: [{ messageId: 'deprecated' }],
+      output: '<div className="inset-s-4" />',
+    },
+    {
+      code: '<div className="-start-4 end-full" />',
+      filename: 'test.tsx',
+      options: [{ entryPoint: ENTRY_POINT }],
+      errors: [
+        { messageId: 'deprecated' },
+        {
+          messageId: 'deprecated',
+          suggestions: [
+            {
+              messageId: 'suggestReplace',
+              data: { className: 'end-full', replacement: 'inset-e-full' },
+              output: '<div className="-inset-s-4 inset-e-full" />',
+            },
+          ],
+        },
+      ],
+      output: '<div className="-inset-s-4 inset-e-full" />',
+    },
+    {
+      code: '<div className="hover:!end-px" />',
+      filename: 'test.tsx',
+      options: [{ entryPoint: ENTRY_POINT }],
+      errors: [{ messageId: 'deprecated' }],
+      output: '<div className="hover:!inset-e-px" />',
     },
   ],
 })
