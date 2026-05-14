@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.8.6 (2026-05-14)
+
+- **Fix `ENOMEM` from `spawnSync` on cold caches in CI / monorepos** — `loadDesignSystemSync` now serializes the precompute child-process spawn with a sync file lock keyed on the content cache hash. Without it, every oxlint worker thread (and every parallel turbo task sharing the same CSS) raced to fork its own `node` child, which exhausted memory on small CI runners and produced repeated `[oxlint-tailwindcss] Failed to load design system: spawnSync ... ENOMEM` errors. Workers that lose the race now wait (`Atomics.wait` on a private `SharedArrayBuffer`, ~50 ms ticks), re-check the on-disk content cache, and read the JSON the winner just wrote. Stale locks (older than 2× the precompute timeout) are forcibly broken so a crashed peer can't wedge the cache; lock-acquisition failure falls back to spawning anyway, so the rule path can never deadlock.
+- Measured on a 16-package monorepo (cold `pnpm lint` via turbo, `MemoryAccounting=yes` cgroup scope): peak resident memory across the whole process tree drops from **~8.5 GB → ~3.4 GB** (-60%) with no measurable wall-time regression. Under a 7 GB / no-swap cap that mirrors GitHub Actions `ubuntu-latest`, the previous version killed 15/18 lint tasks; the new version completes 18/18 cleanly.
+- 1122 tests.
+
 ## 0.8.5 (2026-05-14)
 
 - **Fix `__require is not defined` in ESM bundle** — tsdown rewrites `require(...)` to `__require(...)` in the bundled ESM output and defines the shim only at the top of the bundle. The functions stringified into `PRECOMPUTE_SCRIPT` (sync-loader) and `WORKER_SCRIPT` (runtime-service) inherited the rewritten calls, so the spawned `node -e` child and `Worker { eval: true }` thread crashed at startup with `__require is not defined` and DS-dependent rules silently fell back. Both scripts now prepend `var __require = require;` so the rewritten calls resolve to the native `require`. Adds a regression test that reproduces the failure mode in isolation.

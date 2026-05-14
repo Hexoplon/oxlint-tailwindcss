@@ -11,8 +11,10 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
+  closeSync,
   existsSync,
   mkdirSync,
+  openSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -435,6 +437,63 @@ function writeCacheFiles(
   }
 }
 
+/**
+ * Synchronous file lock used to serialize the precompute child-process spawn across oxlint
+ * worker threads (and concurrent Node processes on the same host). Without this, on a cold
+ * cache every oxlint worker would race to fork its own `node` child, which can exhaust
+ * memory on small CI runners (ENOMEM from spawnSync). With the lock, exactly one worker
+ * spawns the child; the others wait, then re-check the cache and read the populated entry.
+ *
+ * Sleep is implemented via Atomics.wait on a private SharedArrayBuffer — synchronous,
+ * non-busy, and ~50ms granularity. Stale locks (older than 2x the precompute timeout) are
+ * forcibly broken so a crashed peer can't wedge the cache.
+ */
+const LOCK_SLEEP_BUFFER = new SharedArrayBuffer(4)
+const LOCK_SLEEP_VIEW = new Int32Array(LOCK_SLEEP_BUFFER)
+
+function syncSleep(ms: number): void {
+  Atomics.wait(LOCK_SLEEP_VIEW, 0, 0, ms)
+}
+
+function acquireLockSync(lockPath: string, timeoutMs: number): number | null {
+  const start = Date.now()
+  const staleAfterMs = timeoutMs * 2
+  while (true) {
+    try {
+      return openSync(lockPath, 'wx')
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (code !== 'EEXIST') return null
+
+      // Break stale locks left behind by crashed/killed peers.
+      try {
+        const lockMtime = statSync(lockPath).mtimeMs
+        if (Date.now() - lockMtime > staleAfterMs) {
+          try {
+            unlinkSync(lockPath)
+          } catch {}
+          continue
+        }
+      } catch {
+        // Lock vanished between EEXIST and stat — retry immediately.
+        continue
+      }
+
+      if (Date.now() - start > timeoutMs) return null
+      syncSleep(50)
+    }
+  }
+}
+
+function releaseLockSync(fd: number, lockPath: string): void {
+  try {
+    closeSync(fd)
+  } catch {}
+  try {
+    unlinkSync(lockPath)
+  } catch {}
+}
+
 export function loadDesignSystemSync(cssPath: string, timeout?: number): PrecomputedData | null {
   const resolvedPath = resolve(cssPath)
   let outputPath: string | null = null
@@ -472,27 +531,51 @@ export function loadDesignSystemSync(cssPath: string, timeout?: number): Precomp
 
     // The child writes JSON to a temp file to avoid duplicating it in stdout buffers.
     mkdirSync(CACHE_DIR, { recursive: true })
-    outputPath = uniqueTempPath('precompute')
-    execFileSync(process.execPath, ['-e', PRECOMPUTE_SCRIPT], {
-      encoding: 'utf-8',
-      timeout: timeout ?? 30_000,
-      maxBuffer: 1024 * 1024,
-      env: {
-        ...process.env,
-        TAILWIND_CSS_PATH: resolvedPath,
-        TAILWIND_NODE_PATH: tailwindNodePath,
-        TAILWIND_OUTPUT_PATH: outputPath,
-      },
-      cwd: dirname(resolvedPath),
-    })
 
-    const output = readFileSync(outputPath, 'utf-8')
-    unlinkSync(outputPath)
-    outputPath = null
+    // Serialize the spawn across oxlint worker threads so a cold cache doesn't fork N
+    // node children at once (ENOMEM on small CI runners). Lock keyed on content hash:
+    // distinct CSS still parallelizes; identical CSS in a monorepo deduplicates.
+    const spawnTimeout = timeout ?? 30_000
+    const lockPath = `${contentCachePath}.lock`
+    const lockFd = acquireLockSync(lockPath, spawnTimeout + 5_000)
 
-    writeCacheFiles(contentCachePath, mtimeIndexPath, contentHash, output)
+    // Whether or not we got the lock, re-check the cache: a peer may have populated it
+    // while we were waiting. Without the lock we still proceed and spawn — at worst we
+    // duplicate work, never deadlock.
+    const afterWaitCached = tryReadCache(contentCachePath)
+    if (afterWaitCached) {
+      try {
+        writeFileAtomic(mtimeIndexPath, contentHash)
+      } catch {}
+      if (lockFd !== null) releaseLockSync(lockFd, lockPath)
+      return afterWaitCached
+    }
 
-    return JSON.parse(output) as PrecomputedData
+    try {
+      outputPath = uniqueTempPath('precompute')
+      execFileSync(process.execPath, ['-e', PRECOMPUTE_SCRIPT], {
+        encoding: 'utf-8',
+        timeout: spawnTimeout,
+        maxBuffer: 1024 * 1024,
+        env: {
+          ...process.env,
+          TAILWIND_CSS_PATH: resolvedPath,
+          TAILWIND_NODE_PATH: tailwindNodePath,
+          TAILWIND_OUTPUT_PATH: outputPath,
+        },
+        cwd: dirname(resolvedPath),
+      })
+
+      const output = readFileSync(outputPath, 'utf-8')
+      unlinkSync(outputPath)
+      outputPath = null
+
+      writeCacheFiles(contentCachePath, mtimeIndexPath, contentHash, output)
+
+      return JSON.parse(output) as PrecomputedData
+    } finally {
+      if (lockFd !== null) releaseLockSync(lockFd, lockPath)
+    }
   } catch (error) {
     if (outputPath) {
       try {

@@ -1,6 +1,6 @@
 {
   "name": "@hexoplon/oxlint-tailwindcss",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "description": "Tailwind CSS linting rules for oxlint",
   "keywords": [
     "css",
