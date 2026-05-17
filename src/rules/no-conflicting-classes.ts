@@ -8,10 +8,15 @@ import { createLazyLoader } from '../design-system/loader'
 // Most composition is detected automatically via CSS custom properties
 // (see isCompositionViaCssVars). These groups cover cases where the
 // heuristic fails: shared intermediate vars or missing custom props.
+// A capture group marks the utility prefix: same-prefix pairs (e.g.
+// duration-300 / duration-500) fall through to the overlap check so they
+// still conflict, only cross-prefix pairs compose. No capture group means
+// "always compose within group" (e.g. prose).
 export const COMPLEMENTARY_GROUPS: readonly RegExp[] = [
-  /^(?:from|via|to)-/, // gradient stops (share --tw-gradient-stops)
-  /^(?:transition|duration|ease|delay)(?:-|$)/, // transition composition (transition-all has no custom vars)
-  /^-?(?:translate|scale|rotate|skew)-/, // transform axis composition (overlap not in cssProps)
+  /^(from|via|to)-/, // gradient stops (share --tw-gradient-stops)
+  /^(transition|duration|ease|delay)(?:-|$)/, // transition composition (transition-all has no custom vars)
+  /^-?(translate|scale|rotate|skew)-/, // transform axis composition (overlap not in cssProps)
+  /^-?mask-((?:linear|radial|conic|[trblxy])(?:-(?:from|via|to|at))?)(?:-|$)/, // mask gradients: capture "<family>" or "<family>-<role>"; cross-family or cross-role composes
   /^prose(?:-|$)/, // prose + prose-sm/lg/xl modifiers
 ]
 
@@ -24,6 +29,11 @@ export const COMPOSITION_PAIRS: readonly (readonly [RegExp, RegExp])[] = [
   [/^prose(?:-|$)/, /^max-w-/], // prose sets max-width, max-w-* overrides
   [/^animate-in$/, /^(?:fade|spin|zoom|blur)-in(?:-|$)|^slide-in-from-/], // animate-in sets enter defaults, *-in modifiers override one each
   [/^animate-out$/, /^(?:fade|spin|zoom|blur)-out(?:-|$)|^slide-out-to-/], // animate-out sets exit defaults, *-out modifiers override one each
+  // mask-composite mode + mask gradient compose; two composite modes don't match this pair and still conflict on mask-composite
+  [
+    /^mask-(?:add|subtract|intersect|exclude)$/,
+    /^-?mask-(?:linear|radial|conic|[trblxy])-/,
+  ],
 ]
 
 function stripImportant(utility: string): string {
@@ -49,6 +59,22 @@ export function isCompositionViaCssVars(
 }
 
 /**
+ * Detect a narrowing override: the later class's CSS properties are a strict
+ * subset of the earlier class's, so the later class refines one of the
+ * shorthand's properties (size-4 h-6, rounded-t-lg rounded-tl-sm, truncate
+ * text-clip). Direction-sensitive: the inverse means the wider later class
+ * clobbers a prior narrower override.
+ */
+export function isNarrowingOverride(
+  propsEarlier: readonly string[],
+  propsLater: readonly string[],
+): boolean {
+  if (propsLater.length === 0 || propsLater.length >= propsEarlier.length) return false
+  const setEarlier = new Set(propsEarlier)
+  return propsLater.every((p) => setEarlier.has(p))
+}
+
+/**
  * Returns true if two classes (within the same variant) should NOT be reported
  * as conflicting despite sharing CSS properties. Pure: regex tables are passed
  * in (or default to the module-level constants).
@@ -64,13 +90,21 @@ export function shouldSkipPair(
   } = {},
 ): boolean {
   if (isCompositionViaCssVars(propsA, propsB)) return true
+  // Narrowing override (shorthand → longhand on one of its props)
+  if (isNarrowingOverride(propsA, propsB)) return true
 
   const ua = stripImportant(extractUtility(a))
   const ub = stripImportant(extractUtility(b))
 
   const groups = rules.complementaryGroups ?? COMPLEMENTARY_GROUPS
   for (const re of groups) {
-    if (re.test(ua) && re.test(ub)) return true
+    const ma = ua.match(re)
+    const mb = ub.match(re)
+    if (!ma || !mb) continue
+    // No capture group: always compose within group (e.g. prose)
+    if (ma[1] === undefined) return true
+    // Different prefix: compose; same prefix: fall through to overlap check
+    if (ma[1] !== mb[1]) return true
   }
 
   const pairs = rules.compositionPairs ?? COMPOSITION_PAIRS
