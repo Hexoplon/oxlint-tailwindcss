@@ -293,8 +293,30 @@ describe('shouldSkipPair', () => {
     expect(shouldSkipPair('from-red-500', 'to-blue-500', [], [])).toBe(true)
   })
 
-  it('skips transform axes (translate-x + translate-y)', () => {
-    expect(shouldSkipPair('translate-x-2', 'translate-y-4', [], [])).toBe(true)
+  it('skips transform axes via disjoint --tw-* vars', () => {
+    // translate-x and translate-y are same captured prefix ("translate"),
+    // so they fall through the complementary-group check. With real DS props
+    // they have disjoint --tw-translate-{x,y} vars and compose via vars.
+    expect(
+      shouldSkipPair(
+        'translate-x-2',
+        'translate-y-4',
+        ['translate', '--tw-translate-x'],
+        ['translate', '--tw-translate-y'],
+      ),
+    ).toBe(true)
+  })
+
+  it('does NOT skip same-axis transforms (same captured prefix conflict)', () => {
+    // translate-x-1 vs translate-x-2: same prefix → fall through → overlap → conflict
+    expect(
+      shouldSkipPair(
+        'translate-x-1',
+        'translate-x-2',
+        ['translate', '--tw-translate-x'],
+        ['translate', '--tw-translate-x'],
+      ),
+    ).toBe(false)
   })
 
   it('skips composition pair text-* + leading-*', () => {
