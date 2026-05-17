@@ -848,6 +848,16 @@ The class parser correctly handles:
 - **`no-unnecessary-arbitrary-value`**: Only detects equivalences for classes with a single CSS property. Multi-property utilities may have arbitrary forms that aren't detected.
 - **Component classes**: Only first-level `@import` relative paths are followed. Deeply nested imports or absolute paths are not resolved.
 
+## Supported plugins
+
+The plugin loads classes through `@tailwindcss/node`, so any plugin imported into your CSS entry point — `@plugin '...'` or `@import '...'` — is recognized automatically by every rule. The following are exercised by the test suite:
+
+- **[`@tailwindcss/typography`](https://github.com/tailwindlabs/tailwindcss-typography)** — `prose`, `prose-sm/lg/xl`, `not-prose`. `no-conflicting-classes` extracts only root-level CSS properties from `prose`, so utilities like `prose overflow-x-auto` aren't reported as conflicts.
+- **[`tailwindcss-animate`](https://github.com/jamiebuilds/tailwindcss-animate)** — `animate-in`, `animate-out`, `fade-{in,out}-*`, `zoom-{in,out}-*`, `spin-{in,out}-*`, `slide-{in-from,out-to}-*`, `duration-*`, `delay-*`, `ease-*`, `direction-*`, `fill-mode-*`, `repeat-*`, `running`, `paused`. `animate-in`/`animate-out` initialize all `--tw-enter-*` / `--tw-exit-*` custom properties to `initial`, and modifiers (`fade-in`, `zoom-in`, `slide-in-from-*`, etc.) each override one of them; this composition is recognized by `no-conflicting-classes`.
+- **[`tw-animate-css`](https://github.com/Wombosvideo/tw-animate-css)** — v4-native rewrite of `tailwindcss-animate`. Adds `blur-{in,out}-*`, logical (RTL-aware) `slide-{in-from,out-to}-{start,end}-*`, `play-state-*`, `animation-duration-*`, and the `animate-accordion-{up,down}` / `animate-collapsible-{up,down}` / `animate-caret-blink` keyframe animations used by Radix-style headless component libraries.
+
+Other plugins that emit classes through standard `getClassList()` and CSS output should work out of the box. If you find one that doesn't, open an issue.
+
 ## Requirements
 
 - Node.js >= 20
