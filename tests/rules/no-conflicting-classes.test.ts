@@ -1,7 +1,11 @@
 import { resolve } from 'node:path'
-import { beforeAll, describe, test, expect } from 'vitest'
+import { beforeAll, describe, it, test, expect } from 'vitest'
 import { RuleTester } from 'oxlint/plugins-dev'
-import { noConflictingClasses } from '../../src/rules/no-conflicting-classes'
+import {
+  noConflictingClasses,
+  isCompositionViaCssVars,
+  shouldSkipPair,
+} from '../../src/rules/no-conflicting-classes'
 import { getLoadedDesignSystem, resetDesignSystem } from '../../src/design-system/loader'
 import { loadDesignSystemSync } from '../../src/design-system/sync-loader'
 import { DesignSystemCache } from '../../src/design-system/cache'
@@ -178,5 +182,85 @@ describe('text + tracking composition with letter-spacing', () => {
       { code: '<div className="text-base tracking-normal" />', filename: 'test.tsx' },
     ],
     invalid: [],
+  })
+})
+
+// --- Unit tests for the pure composition heuristics ---
+
+describe('isCompositionViaCssVars', () => {
+  it('returns true when both sides define disjoint --tw-* properties', () => {
+    // shadow and ring both contribute to box-shadow via different vars
+    expect(
+      isCompositionViaCssVars(['box-shadow', '--tw-shadow'], ['box-shadow', '--tw-ring-shadow']),
+    ).toBe(true)
+  })
+
+  it('returns false when both sides share a --tw-* property', () => {
+    expect(
+      isCompositionViaCssVars(['box-shadow', '--tw-shadow'], ['box-shadow', '--tw-shadow']),
+    ).toBe(false)
+  })
+
+  it('returns false when one side has no custom properties', () => {
+    expect(
+      isCompositionViaCssVars(['background-color'], ['background-color', '--tw-bg-opacity']),
+    ).toBe(false)
+  })
+
+  it('returns false when neither side has custom properties', () => {
+    expect(isCompositionViaCssVars(['color'], ['color'])).toBe(false)
+  })
+})
+
+describe('shouldSkipPair', () => {
+  it('skips pairs that compose via disjoint --tw-* vars', () => {
+    expect(
+      shouldSkipPair(
+        'shadow-md',
+        'ring-2',
+        ['box-shadow', '--tw-shadow'],
+        ['box-shadow', '--tw-ring-shadow'],
+      ),
+    ).toBe(true)
+  })
+
+  it('skips pairs in the same complementary group (gradient stops)', () => {
+    expect(shouldSkipPair('from-red-500', 'to-blue-500', [], [])).toBe(true)
+  })
+
+  it('skips transform axes (translate-x + translate-y)', () => {
+    expect(shouldSkipPair('translate-x-2', 'translate-y-4', [], [])).toBe(true)
+  })
+
+  it('skips composition pair text-* + leading-*', () => {
+    expect(shouldSkipPair('text-sm', 'leading-tight', [], [])).toBe(true)
+  })
+
+  it('skips composition pair in either order (leading-* + text-*)', () => {
+    expect(shouldSkipPair('leading-tight', 'text-sm', [], [])).toBe(true)
+  })
+
+  it('does NOT skip true conflicts on the same property', () => {
+    expect(
+      shouldSkipPair('bg-red-500', 'bg-blue-500', ['background-color'], ['background-color']),
+    ).toBe(false)
+  })
+
+  it('strips ! (prefix) before regex matching', () => {
+    expect(shouldSkipPair('!from-red-500', '!to-blue-500', [], [])).toBe(true)
+  })
+
+  it('strips ! (suffix) before regex matching', () => {
+    expect(shouldSkipPair('from-red-500!', 'to-blue-500!', [], [])).toBe(true)
+  })
+
+  it('accepts injected rule tables', () => {
+    // With empty rule tables nothing should be skipped via regex
+    expect(
+      shouldSkipPair('from-red-500', 'to-blue-500', [], [], {
+        complementaryGroups: [],
+        compositionPairs: [],
+      }),
+    ).toBe(false)
   })
 })
