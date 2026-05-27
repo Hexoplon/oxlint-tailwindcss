@@ -20,6 +20,7 @@ ruleTester.run('enforce-canonical', enforceCanonical, {
     { code: '<div className="flex items-center" />', filename: 'test.tsx' },
     { code: '<div className="bg-blue-500 p-4" />', filename: 'test.tsx' },
     { code: '<div className="m-0" />', filename: 'test.tsx' },
+    { code: '<div className="[&_svg]:size-4 has-[input]:bg-red-500" />', filename: 'test.tsx' },
     // Important modifier: position is not enforce-canonical's concern
     { code: '<div className="!rounded-lg" />', filename: 'test.tsx' },
     { code: '<div className="rounded-lg!" />', filename: 'test.tsx' },
@@ -78,12 +79,31 @@ ruleTester.run('enforce-canonical', enforceCanonical, {
       errors: [{ messageId: 'nonCanonical' }],
       output: '<div className="max-w-100" />',
     },
+    // Precomputed arbitrary equivalents skip the runtime worker fast path.
+    {
+      code: '<div className="bg-[var(--color-red-500)]" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="bg-red-500" />',
+    },
+    {
+      code: '<div className="hover:!bg-[var(--color-red-500)]" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="hover:!bg-red-500" />',
+    },
     // Issue #11: var() syntax canonicalization with opacity modifier
     {
       code: '<div className="text-[var(--color-text)]/90" />',
       filename: 'test.tsx',
       errors: [{ messageId: 'nonCanonical' }],
       output: '<div className="text-(--color-text)/90" />',
+    },
+    {
+      code: '<div className="hover:!text-[var(--color-text)]/90" />',
+      filename: 'test.tsx',
+      errors: [{ messageId: 'nonCanonical' }],
+      output: '<div className="hover:!text-(--color-text)/90" />',
     },
     // Issue #11: theme() function canonicalization
     {

@@ -4,6 +4,7 @@ import {
   canonicalizeClassesSync,
   resetCanonicalizeService,
 } from '../../src/design-system/canonicalize-service'
+import { getRuntimeServiceStats } from '../../src/design-system/runtime-service'
 import {
   getCssPropertiesSync,
   resetCssPropsService,
@@ -73,6 +74,16 @@ describe('canonicalize-service cache', () => {
     const elapsed = performance.now() - before
     expect(aAgain).toEqual(a)
     expect(elapsed).toBeLessThan(500)
+  })
+
+  it('keeps one worker alive when alternating cssPaths', () => {
+    resetCanonicalizeService()
+
+    canonicalizeClassesSync(DEFAULT_CSS, ['p-[14px]'], 16)
+    canonicalizeClassesSync(ALT_CSS, ['p-[15px]'], 16)
+    canonicalizeClassesSync(DEFAULT_CSS, ['m-[7px]'], 16)
+
+    expect(getRuntimeServiceStats().workerStarts).toBe(1)
   })
 
   it('reset clears cached entries (new call takes worker path again)', () => {

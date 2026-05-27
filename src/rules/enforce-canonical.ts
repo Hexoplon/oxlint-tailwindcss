@@ -1,14 +1,65 @@
 import { defineRule } from '@oxlint/plugins'
 import { createExtractorVisitors, preserveSpaces, type ClassLocation } from '../utils/extractors'
 import { rebuildClassString, splitClassesWithSeparators } from '../utils/class-splitter'
-import { utilityHasDynamicValue } from '../utils/class-parser'
+import {
+  extractVariants,
+  splitUtilityAndVariant,
+  utilityHasDynamicValue,
+} from '../utils/class-parser'
+import type { DesignSystemCache } from '../design-system/cache'
 import { createLazyLoader, rootFontSizeFromSettings } from '../design-system/loader'
 import { canonicalizeClassesSync } from '../design-system/canonicalize-service'
 import { safeSettings } from '../types'
 import { preserveSortedClassOrder } from '../utils/sort-preservation'
 
 function needsRuntimeCanonicalization(cls: string): boolean {
-  return utilityHasDynamicValue(cls) || cls.includes('[') || cls.includes('(')
+  if (utilityHasDynamicValue(cls)) return true
+  return extractVariants(cls).some((variant) => variant.startsWith('[&:has('))
+}
+
+function stripImportant(utility: string): string {
+  if (utility.startsWith('!')) return utility.slice(1)
+  if (utility.endsWith('!')) return utility.slice(0, -1)
+  return utility
+}
+
+function canonicalizeVarFunctionSyntax(className: string): string | null {
+  const { utility, variant } = splitUtilityAndVariant(className)
+  const hasImportantPrefix = utility.startsWith('!')
+  const hasImportantSuffix = !hasImportantPrefix && utility.endsWith('!')
+  const bareUtility = hasImportantPrefix
+    ? utility.slice(1)
+    : hasImportantSuffix
+      ? utility.slice(0, -1)
+      : utility
+  const match = /^(.+)-\[var\((--[\w-]+)\)\](\/.*)?$/.exec(bareUtility)
+  if (!match) return null
+  if (match[2].slice(2).includes('-')) return null
+
+  const canonicalUtility = `${match[1]}-(${match[2]})${match[3] ?? ''}`
+  return (
+    variant + (hasImportantPrefix ? '!' : '') + canonicalUtility + (hasImportantSuffix ? '!' : '')
+  )
+}
+
+function getThemeTokenEquivalent(cache: DesignSystemCache, className: string): string | null {
+  const replacement = cache.getNamedEquivalentClass(className)
+  if (!replacement) return null
+
+  const { utility } = splitUtilityAndVariant(className)
+  const bareUtility = stripImportant(utility)
+  const match = /^(.+)-\[var\(--(.+)\)\]$/.exec(bareUtility)
+  if (!match) return null
+
+  const tokenNamespaceEnd = match[2].indexOf('-')
+  if (tokenNamespaceEnd <= 0) return null
+
+  const tokenValue = match[2].slice(tokenNamespaceEnd + 1)
+  const replacementUtility = stripImportant(splitUtilityAndVariant(replacement).utility)
+  return replacementUtility === `${match[1]}-${tokenValue}` ||
+    replacementUtility.endsWith(`-${tokenValue}`)
+    ? replacement
+    : null
 }
 
 /**
@@ -96,8 +147,18 @@ export const enforceCanonical = defineRule({
 
         for (let i = 0; i < classes.length; i++) {
           if (needsRuntimeCanonicalization(classes[i])) {
-            arbitraryIdx.push(i)
-            arbitrary.push(classes[i])
+            const namedEquivalent = getThemeTokenEquivalent(cache, classes[i])
+            if (namedEquivalent) {
+              canonicals[i] = namedEquivalent
+            } else {
+              const varSyntax = canonicalizeVarFunctionSyntax(classes[i])
+              if (varSyntax) {
+                canonicals[i] = varSyntax
+              } else {
+                arbitraryIdx.push(i)
+                arbitrary.push(classes[i])
+              }
+            }
           } else {
             canonicals[i] = cache.canonicalize(classes[i])
           }

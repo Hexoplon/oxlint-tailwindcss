@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.8.8 (2026-05-27)
+
+- **Fix monorepo runtime worker churn** — The shared runtime worker now caches Tailwind design systems by entry point instead of restarting when linted files alternate between CSS entry points. This removes the large slowdown seen when one oxlint invocation scans multiple apps/packages with `enforce-canonical` or `enforce-sort-order` enabled.
+- **Reduce `enforce-canonical` worker traffic** — Precomputed arbitrary equivalents now preserve variants/important modifiers through a shared cache helper, and raw bracket `var()` syntax can canonicalize to Tailwind's paren shorthand without a worker round trip when safe.
+- Measured on a 390-file Next.js monorepo Tailwind-only lint over three entry points: combined run improved from ~97s installed v0.8.7 to ~9s with v0.8.8.
+- 1130 tests (up from 1122).
+
 ## 0.8.7 (2026-05-14)
 
 - **Fix `ENOMEM` from `spawnSync` on cold caches in CI** — `loadDesignSystemSync` now precomputes the design system inside a `worker_threads.Worker` instead of spawning a child `node` process via `execFileSync`. The previous v0.8.6 file-lock serialized the spawn, but a single `fork()`/`posix_spawn()` of the oxlint parent (which holds ~216 GB of V8 virtual address-space reservations) was already enough to exceed the kernel commit charge on small CI runners (e.g. GitHub Actions `ubuntu-latest`), producing `[oxlint-tailwindcss] Failed to load design system: spawnSync … ENOMEM`. Worker threads share the parent's address space, so they require no fork-time commit. `execFileSync` is retained as a fallback for environments where Worker creation fails.

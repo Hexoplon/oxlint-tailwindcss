@@ -201,6 +201,24 @@ describe('getNamedEquivalent', () => {
   })
 })
 
+describe('getNamedEquivalentClass', () => {
+  it('returns named class with variant prefix preserved', () => {
+    const cache = DesignSystemCache.fromPrecomputed(makeData())
+    expect(cache.getNamedEquivalentClass('hover:p-[1rem]')).toBe('hover:p-4')
+  })
+
+  it('preserves important modifier position', () => {
+    const cache = DesignSystemCache.fromPrecomputed(makeData())
+    expect(cache.getNamedEquivalentClass('hover:!p-[1rem]')).toBe('hover:!p-4')
+    expect(cache.getNamedEquivalentClass('hover:p-[1rem]!')).toBe('hover:p-4!')
+  })
+
+  it('returns null for classes without a named equivalent', () => {
+    const cache = DesignSystemCache.fromPrecomputed(makeData())
+    expect(cache.getNamedEquivalentClass('hover:p-[999px]')).toBeNull()
+  })
+})
+
 describe('getVariantPriority', () => {
   it('returns priority for known variants', () => {
     const cache = DesignSystemCache.fromPrecomputed(makeData())

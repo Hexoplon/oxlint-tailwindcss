@@ -1,6 +1,11 @@
 import { type PrecomputedData } from './sync-loader'
 import { roundRemValue } from '../utils/floating-point'
-import { extractUtility, extractVariants, hasArbitraryValue } from '../utils/class-parser'
+import {
+  extractUtility,
+  extractVariants,
+  hasArbitraryValue,
+  splitUtilityAndVariant,
+} from '../utils/class-parser'
 
 /** Strip `!` modifier from start or end: `!flex` → `flex`, `flex!` → `flex` */
 function stripImportant(cls: string): { bare: string; important: boolean } {
@@ -327,5 +332,20 @@ export class DesignSystemCache {
     const { bare, important } = stripImportant(className)
     if (important) return this.arbitraryEquivMap.get(bare) ?? null
     return null
+  }
+
+  getNamedEquivalentClass(className: string): string | null {
+    const { utility, variant } = splitUtilityAndVariant(className)
+    const hasImportantPrefix = utility.startsWith('!')
+    const hasImportantSuffix = !hasImportantPrefix && utility.endsWith('!')
+    const bareUtility = hasImportantPrefix
+      ? utility.slice(1)
+      : hasImportantSuffix
+        ? utility.slice(0, -1)
+        : utility
+    const named = this.getNamedEquivalent(bareUtility)
+    if (!named) return null
+
+    return variant + (hasImportantPrefix ? '!' : '') + named + (hasImportantSuffix ? '!' : '')
   }
 }

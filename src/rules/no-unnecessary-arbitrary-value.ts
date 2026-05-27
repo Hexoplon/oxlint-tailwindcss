@@ -1,7 +1,7 @@
 import { defineRule } from '@oxlint/plugins'
 import { createExtractorVisitors, preserveSpaces, type ClassLocation } from '../utils/extractors'
 import { rebuildClassString, splitClassesWithSeparators } from '../utils/class-splitter'
-import { hasArbitraryValue, splitUtilityAndVariant } from '../utils/class-parser'
+import { hasArbitraryValue } from '../utils/class-parser'
 import { createLazyLoader } from '../design-system/loader'
 import { preserveSortedClassOrder } from '../utils/sort-preservation'
 
@@ -43,25 +43,8 @@ export const noUnnecessaryArbitraryValue = defineRule({
         for (const cls of classes) {
           if (!hasArbitraryValue(cls)) continue
 
-          const { utility, variant } = splitUtilityAndVariant(cls)
-
-          // Strip ! (important) for lookup — prefix or suffix
-          const hasImportantPrefix = utility.startsWith('!')
-          const hasImportantSuffix = !hasImportantPrefix && utility.endsWith('!')
-          const bareUtility = hasImportantPrefix
-            ? utility.slice(1)
-            : hasImportantSuffix
-              ? utility.slice(0, -1)
-              : utility
-
-          const named = cache.getNamedEquivalent(bareUtility)
-          if (!named) continue
-
-          offending.push({
-            cls,
-            replacement:
-              variant + (hasImportantPrefix ? '!' : '') + named + (hasImportantSuffix ? '!' : ''),
-          })
+          const replacement = cache.getNamedEquivalentClass(cls)
+          if (replacement) offending.push({ cls, replacement })
         }
 
         if (offending.length === 0) continue

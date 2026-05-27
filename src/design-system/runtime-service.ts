@@ -2,9 +2,10 @@
  * Shared persistent design-system service using worker_threads + SharedArrayBuffer.
  *
  * Tailwind's design system is async to load, but oxlint rule visitors are sync.
- * This worker loads one DS per entry point, then serves synchronous sort and
- * canonicalization requests via Atomics.wait(). Keeping both operations in one
- * worker avoids loading the same DS twice when both rules are enabled.
+ * This worker caches design systems by entry point, then serves synchronous
+ * sort and canonicalization requests via Atomics.wait(). Keeping both
+ * operations in one worker avoids loading the same DS twice when both rules are
+ * enabled, and avoids worker churn when monorepo files alternate entry points.
  */
 
 import { Worker } from 'node:worker_threads'
@@ -14,7 +15,7 @@ const BUFFER_SIZE = 4 * 1024 * 1024 // 4 MB
 const HEADER_INTS = 4
 const DATA_OFFSET = HEADER_INTS * 4 + 4 // 20 bytes
 const INIT_TIMEOUT = 30_000
-const REQUEST_TIMEOUT = 10_000
+const REQUEST_TIMEOUT = 30_000
 
 // The ESM build is bundled by tsdown, which rewrites `require(...)` to
 // `__require(...)` (a `createRequire` shim at the bundle top). This script
@@ -28,22 +29,49 @@ const { workerData } = require('worker_threads');
 ${extractRootCssProps}
 
 async function main() {
-  const { sharedBuffer, cssPath } = workerData;
+  const { sharedBuffer } = workerData;
   const control = new Int32Array(sharedBuffer, 0, ${HEADER_INTS});
   const lengthView = new DataView(sharedBuffer, ${HEADER_INTS * 4}, 4);
   const dataArea = new Uint8Array(sharedBuffer, ${DATA_OFFSET});
+  const maxDesignSystems = Math.max(1, Number(process.env.OXLINT_TAILWINDCSS_RUNTIME_DS_CACHE_SIZE) || 4);
+  const dsCache = new Map();
+  const failedCssPaths = new Set();
 
-  let ds;
+  let loadDesignSystem;
+  let readFileSync;
+  let dirname;
   try {
-    const { __unstable__loadDesignSystem } = require(workerData.tailwindNodePath);
-    const { readFileSync } = require('fs');
-    const { dirname } = require('path');
-    const css = readFileSync(cssPath, 'utf-8');
-    ds = await __unstable__loadDesignSystem(css, { base: dirname(cssPath) });
+    loadDesignSystem = require(workerData.tailwindNodePath).__unstable__loadDesignSystem;
+    readFileSync = require('fs').readFileSync;
+    dirname = require('path').dirname;
   } catch {
     Atomics.store(control, 2, -1);
     Atomics.notify(control, 2);
     return;
+  }
+
+  async function getDesignSystem(cssPath) {
+    const cached = dsCache.get(cssPath);
+    if (cached) {
+      dsCache.delete(cssPath);
+      dsCache.set(cssPath, cached);
+      return cached;
+    }
+    if (failedCssPaths.has(cssPath)) return null;
+
+    try {
+      const css = readFileSync(cssPath, 'utf-8');
+      const ds = await loadDesignSystem(css, { base: dirname(cssPath) });
+      if (dsCache.size >= maxDesignSystems) {
+        const oldest = dsCache.keys().next().value;
+        if (oldest !== undefined) dsCache.delete(oldest);
+      }
+      dsCache.set(cssPath, ds);
+      return ds;
+    } catch {
+      failedCssPaths.add(cssPath);
+      return null;
+    }
   }
 
   Atomics.store(control, 2, 1);
@@ -60,8 +88,11 @@ async function main() {
     try {
       const request = JSON.parse(requestStr);
       let result;
+      const ds = await getDesignSystem(request.cssPath);
 
-      if (request.type === 'sort') {
+      if (!ds) {
+        result = null;
+      } else if (request.type === 'sort') {
         const ordered = ds.getClassOrder(request.classes);
         result = [...ordered]
           .sort((a, b) => {
@@ -108,21 +139,27 @@ main();
 
 interface SortRequest {
   type: 'sort'
+  cssPath: string
   classes: string[]
 }
 
 interface CanonicalizeRequest {
   type: 'canonicalize'
+  cssPath: string
   classes: string[]
   rem?: number
 }
 
 interface CssPropsRequest {
   type: 'cssProps'
+  cssPath: string
   classes: string[]
 }
 
-type RuntimeRequest = SortRequest | CanonicalizeRequest | CssPropsRequest
+type RuntimeRequestInput =
+  | Omit<SortRequest, 'cssPath'>
+  | Omit<CanonicalizeRequest, 'cssPath'>
+  | Omit<CssPropsRequest, 'cssPath'>
 
 let worker: Worker | null = null
 let controlArray: Int32Array | null = null
@@ -130,7 +167,7 @@ let lengthView: DataView | null = null
 let dataArea: Uint8Array | null = null
 let initialized = false
 let available = true
-let currentCssPath: string | null = null
+let workerStartCount = 0
 
 // Process-wide cache of canonicalized classes.
 // Key: `${cssPath}\0${rem}\0${className}` — isolates monorepos (multiple DSs)
@@ -141,20 +178,10 @@ const canonCache = new Map<string, string>()
 // Key: `${cssPath}\0${className}` — isolates monorepos (multiple DSs).
 const cssPropsCache = new Map<string, string[]>()
 
-function ensureService(cssPath: string): boolean {
-  if (initialized && currentCssPath === cssPath) return available
-
-  if (initialized) {
-    cleanup()
-    initialized = false
-    available = true
-    controlArray = null
-    lengthView = null
-    dataArea = null
-  }
+function ensureService(): boolean {
+  if (initialized) return available
 
   initialized = true
-  currentCssPath = cssPath
 
   try {
     // Resolve @tailwindcss/node from the parent thread where the plugin's
@@ -169,8 +196,9 @@ function ensureService(cssPath: string): boolean {
 
     worker = new Worker(WORKER_SCRIPT, {
       eval: true,
-      workerData: { sharedBuffer, cssPath, tailwindNodePath },
+      workerData: { sharedBuffer, tailwindNodePath },
     })
+    workerStartCount++
 
     const currentWorker = worker
     currentWorker.unref()
@@ -212,18 +240,18 @@ function resetRuntimeWorker(): void {
   cleanup()
   initialized = false
   available = true
-  currentCssPath = null
   controlArray = null
   lengthView = null
   dataArea = null
+  workerStartCount = 0
 }
 
-function callWorker<T>(cssPath: string, requestData: RuntimeRequest): T | null {
-  if (!ensureService(cssPath)) return null
+function callWorker<T>(cssPath: string, requestData: RuntimeRequestInput): T | null {
+  if (!ensureService()) return null
   if (!controlArray || !dataArea || !lengthView) return null
 
   try {
-    const request = Buffer.from(JSON.stringify(requestData), 'utf-8')
+    const request = Buffer.from(JSON.stringify({ ...requestData, cssPath }), 'utf-8')
     if (request.length > BUFFER_SIZE - DATA_OFFSET) return null
 
     dataArea.set(request, 0)
@@ -376,4 +404,8 @@ export function resetCanonicalizeRuntimeService(): void {
 export function resetCssPropsRuntimeService(): void {
   resetRuntimeWorker()
   cssPropsCache.clear()
+}
+
+export function getRuntimeServiceStats(): { workerStarts: number } {
+  return { workerStarts: workerStartCount }
 }
