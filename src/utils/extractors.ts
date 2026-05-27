@@ -144,16 +144,20 @@ export function createExtractorVisitors(
 } {
   return {
     JSXAttribute(node) {
-      check(extractFromJSXAttribute(node, getExtractorConfig(context)))
+      const locations = extractFromJSXAttribute(node, getExtractorConfig(context))
+      if (locations.length > 0) check(locations)
     },
     CallExpression(node) {
-      check(extractFromCallExpression(node, getExtractorConfig(context)))
+      const locations = extractFromCallExpression(node, getExtractorConfig(context))
+      if (locations.length > 0) check(locations)
     },
     TaggedTemplateExpression(node) {
-      check(extractFromTaggedTemplate(node, getExtractorConfig(context)))
+      const locations = extractFromTaggedTemplate(node, getExtractorConfig(context))
+      if (locations.length > 0) check(locations)
     },
     VariableDeclarator(node) {
-      check(extractFromVariableDeclarator(node, getExtractorConfig(context)))
+      const locations = extractFromVariableDeclarator(node, getExtractorConfig(context))
+      if (locations.length > 0) check(locations)
     },
   }
 }

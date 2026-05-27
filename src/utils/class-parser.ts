@@ -122,6 +122,8 @@ export function hasArbitraryValue(cls: string): boolean {
  * the precomputed cache without touching the worker.
  */
 export function utilityHasDynamicValue(cls: string): boolean {
+  if (!cls.includes('[') && !cls.includes('(')) return false
+
   const utility = extractUtility(cls)
   return utility.includes('[') || utility.includes('(')
 }
